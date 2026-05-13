@@ -75,3 +75,4 @@ ProjectSettings/ProjectSettings.asset
 ProjectSettings/ShaderGraphSettings.asset
 ProjectSettings/URPProjectSettings.asset
 *.slnx
+.vscode/
