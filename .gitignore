@@ -67,3 +67,29 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Machine-specific Unity files
+Assets/Samples/
+ProjectSettings/Packages/
+ProjectSettings/ProjectSettings.asset
+ProjectSettings/ShaderGraphSettings.asset
+ProjectSettings/URPProjectSettings.asset
+*.slnx
+.vscode/
+
+# Asset meta data should only be ignored when the corresponding asset is also ignored
+!/[Aa]ssets/**/*.meta
+
+# macOS Specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Thumbs.db.meta
+
+# JetBrains
+/.idea/
+.idea/**
