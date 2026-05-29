@@ -10,14 +10,18 @@ using UnityEngine.InputSystem;
 public class CatchZoneController : MonoBehaviour
 {
     [Header("Movement")]
-    [SerializeField] private float _sensitivity = 150f;     // Canvas units moved per (m/s²) of tilt per second
-    [SerializeField] private float _deadZone    = 0.08f;    // Ignores tiny accelerometer noise below this threshold
-    [SerializeField] private bool  _invertX     = false;    // Flip if the bar moves the wrong direction on device
+    [SerializeField] private float _deadZone = 0.08f;  // Ignores tiny accelerometer noise below this threshold
+    [SerializeField] private bool  _invertX  = false;  // Flip if the bar moves the wrong direction on device
+
+    private float _maxSpeed     = 1200f;
+    private float _acceleration = 2400f;
+    private float _deceleration = 3600f;
 
     private RectTransform _rectTransform;
     private Accelerometer _accelerometer;
-    private float _leftClamp;
-    private float _rightClamp;
+    private float         _leftClamp;
+    private float         _rightClamp;
+    private float         _currentVelocity;
 
     // Exposes the RectTransform for AABB overlap checks in DropBehaviour
     public RectTransform CatchRect => _rectTransform;
@@ -71,14 +75,23 @@ public class CatchZoneController : MonoBehaviour
         if (_accelerometer == null) return;
 
         float rawTilt = _accelerometer.acceleration.ReadValue().x;
-
-        // Dead zone prevents the bar drifting when the phone is resting flat
-        if (Mathf.Abs(rawTilt) < _deadZone) rawTilt = 0f;
         if (_invertX) rawTilt = -rawTilt;
 
-        // Velocity-based: tilt angle drives speed, not absolute position.
-        // Holding the phone at an angle makes the bar slide continuously — natural for a catch game.
-        float newX = _rectTransform.anchoredPosition.x + rawTilt * _sensitivity * Time.deltaTime;
+        if (Mathf.Abs(rawTilt) > _deadZone)
+        {
+            // Tilt detected — accelerate velocity toward max speed in the tilt direction
+            float targetVelocity = Mathf.Sign(rawTilt) * _maxSpeed;
+            _currentVelocity = Mathf.MoveTowards(_currentVelocity, targetVelocity, _acceleration * Time.deltaTime);
+        }
+        else
+        {
+            // No tilt — decelerate back to zero
+            _currentVelocity = Mathf.MoveTowards(_currentVelocity, 0f, _deceleration * Time.deltaTime);
+        }
+
+        _currentVelocity = Mathf.Clamp(_currentVelocity, -_maxSpeed, _maxSpeed);
+
+        float newX = _rectTransform.anchoredPosition.x + _currentVelocity * Time.deltaTime;
         newX = Mathf.Clamp(newX, _leftClamp, _rightClamp);
 
         _rectTransform.anchoredPosition = new Vector2(newX, _rectTransform.anchoredPosition.y);

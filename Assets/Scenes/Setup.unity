@@ -531,7 +531,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 331264285}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 869188514}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e1760703bbd54c04488a8d10600262ab, type: 3}
   m_Name: 
@@ -1199,6 +1199,10 @@ PrefabInstance:
     - target: {fileID: 2512387470528047719, guid: 48cb3fb68c91eb94999fd99957eb0cae, type: 3}
       propertyPath: m_Name
       value: XR Origin (AR Rig)
+      objectReference: {fileID: 0}
+    - target: {fileID: 2512387470528047737, guid: 48cb3fb68c91eb94999fd99957eb0cae, type: 3}
+      propertyPath: m_Enabled
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2512387470528047737, guid: 48cb3fb68c91eb94999fd99957eb0cae, type: 3}
       propertyPath: m_PlanePrefab
@@ -3445,8 +3449,8 @@ MonoBehaviour:
   _cloudPrefab: {fileID: 7836586089143839642, guid: 0a86683fc70615a409dc86eba1a8990c, type: 3}
   _cloudCount: 5
   _spreadRadius: 0.9
-  _cloudYOffsetMin: 0.15
-  _cloudYOffsetMax: 0.2
+  _cloudYOffsetMin: 0.2
+  _cloudYOffsetMax: 0.6
 --- !u!114 &869188525
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3829,7 +3833,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 370bc1ed1a7d62c41894fb59bdb3bbfd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CatchZoneController
-  _sensitivity: 150
   _deadZone: 0.08
   _invertX: 0
 --- !u!114 &937871764
