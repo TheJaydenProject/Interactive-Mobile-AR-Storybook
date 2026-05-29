@@ -82,10 +82,15 @@ public class Page1Manager : MonoBehaviour
     private void OnTrackablesChanged(ARTrackablesChangedEventArgs<ARTrackedImage> args)
     {
         foreach (ARTrackedImage image in args.added)
+        {
+            if (image.referenceImage.name != "page1Placeholder") continue;
             StartSequence(image.transform);
+        }
 
         foreach (ARTrackedImage image in args.updated)
         {
+            if (image.referenceImage.name != "page1Placeholder") continue;
+
             if (image.trackingState == TrackingState.Tracking && !_sequenceActive)
                 StartSequence(image.transform);
             else if (image.trackingState == TrackingState.None && _sequenceActive)
@@ -93,7 +98,10 @@ public class Page1Manager : MonoBehaviour
         }
 
         foreach (var removed in args.removed)
+        {
+            if (removed.Value.referenceImage.name != "page1Placeholder") continue;
             StopSequence();
+        }
     }
 
     private void StartSequence(Transform anchor)

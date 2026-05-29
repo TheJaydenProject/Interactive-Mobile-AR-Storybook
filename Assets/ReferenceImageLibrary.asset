@@ -25,5 +25,15 @@ MonoBehaviour:
       m_GuidHigh: 7120890285649560410
     m_Size: {x: 0.5, y: 0.5}
     m_SpecifySize: 1
-    m_Name: feat1Placeholder
+    m_Name: page1Placeholder
+    m_Texture: {fileID: 0}
+  - m_SerializedGuid:
+      m_GuidLow: 4926699691558293929
+      m_GuidHigh: 1723646025911091083
+    m_SerializedTextureGuid:
+      m_GuidLow: 13475917795356455471
+      m_GuidHigh: 6147486126662008121
+    m_Size: {x: 0.5, y: 0.57714283}
+    m_SpecifySize: 1
+    m_Name: page4Placeholder
     m_Texture: {fileID: 0}
