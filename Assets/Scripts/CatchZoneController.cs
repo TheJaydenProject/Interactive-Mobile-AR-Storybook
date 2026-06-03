@@ -13,9 +13,9 @@ public class CatchZoneController : MonoBehaviour
     [SerializeField] private float _deadZone = 0.08f;  // Ignores tiny accelerometer noise below this threshold
     [SerializeField] private bool  _invertX  = false;  // Flip if the bar moves the wrong direction on device
 
-    private float _maxSpeed     = 1200f;
-    private float _acceleration = 2400f;
-    private float _deceleration = 3600f;
+    private float _maxSpeed     = 840f;
+    private float _acceleration = 1680f;
+    private float _deceleration = 2520f;
 
     private RectTransform _rectTransform;
     private Accelerometer _accelerometer;

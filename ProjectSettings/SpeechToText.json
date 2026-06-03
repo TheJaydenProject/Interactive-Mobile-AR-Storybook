@@ -1,0 +1,5 @@
+{
+    "AutomatedSetup": true,
+    "SpeechRecognitionUsageDescription": "This app uses speech recognition to interact with the story",
+    "MicrophoneUsageDescription": "This app uses the microphone to listen to your voice"
+}

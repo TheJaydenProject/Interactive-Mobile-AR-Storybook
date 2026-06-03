@@ -6,4 +6,9 @@ public class PendantManager : MonoBehaviour
     {
         Debug.Log("[PendantManager] Blue Spark collected.");
     }
+
+    public void CollectRedSpark()
+    {
+        Debug.Log("[PendantManager] Red Spark collected.");
+    }
 }
