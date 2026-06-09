@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
@@ -12,6 +13,9 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     [SerializeField] private string _imageTargetName = "page6Placeholder";
 
     [Header("Words")]
+    [SerializeField] private GameObject _page6WordsParent;
+    [SerializeField] private GameObject _textBackgroundOverlay;
+    [SerializeField] private float      _wordsFadeInDuration = 0.5f;
     [SerializeField] private TMP_Text[] _wordLabels;
 
     [Header("Completion")]
@@ -33,6 +37,8 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 
     private void Start()
     {
+        _page6WordsParent?.SetActive(false);
+        _textBackgroundOverlay?.SetActive(false);
         SpeechToText.Initialize("en-US");
         ResetWordColors();
     }
@@ -79,6 +85,7 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     public void StartListening()
     {
         if (_completionTriggered) return;
+        StartCoroutine(FadeInWords());
         _isListening = true;
         SpeechToText.RequestPermissionAsync(( permission ) => OnPermissionResult(permission));
     }
@@ -92,6 +99,8 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
             _restartCoroutine = null;
         }
         SpeechToText.ForceStop();
+        _page6WordsParent?.SetActive(false);
+        _textBackgroundOverlay?.SetActive(false);
     }
 
     private void OnPermissionResult(SpeechToText.Permission permission)
@@ -202,6 +211,46 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     }
 
     // --- Visuals ---
+
+    private IEnumerator FadeInWords()
+    {
+        if (_page6WordsParent != null) _page6WordsParent.SetActive(true);
+        if (_textBackgroundOverlay != null) _textBackgroundOverlay.SetActive(true);
+
+        Image overlayImage = _textBackgroundOverlay != null ? _textBackgroundOverlay.GetComponent<Image>() : null;
+        Color overlayTargetColor = overlayImage != null ? overlayImage.color : Color.white;
+
+        if (_wordLabels != null)
+            foreach (TMP_Text label in _wordLabels)
+                if (label != null) label.color = new Color(UnlitColor.r, UnlitColor.g, UnlitColor.b, 0f);
+
+        if (overlayImage != null)
+            overlayImage.color = new Color(overlayTargetColor.r, overlayTargetColor.g, overlayTargetColor.b, 0f);
+
+        float elapsed = 0f;
+        while (elapsed < _wordsFadeInDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / _wordsFadeInDuration);
+
+            if (_wordLabels != null)
+                foreach (TMP_Text label in _wordLabels)
+                    if (label != null)
+                        label.color = new Color(UnlitColor.r, UnlitColor.g, UnlitColor.b, Mathf.Lerp(0f, UnlitColor.a, t));
+
+            if (overlayImage != null)
+                overlayImage.color = new Color(overlayTargetColor.r, overlayTargetColor.g, overlayTargetColor.b, Mathf.Lerp(0f, overlayTargetColor.a, t));
+
+            yield return null;
+        }
+
+        if (_wordLabels != null)
+            foreach (TMP_Text label in _wordLabels)
+                if (label != null) label.color = UnlitColor;
+
+        if (overlayImage != null)
+            overlayImage.color = overlayTargetColor;
+    }
 
     private void ResetWordColors()
     {
