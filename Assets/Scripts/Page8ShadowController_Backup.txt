@@ -1,0 +1,250 @@
+using System.Collections;
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
+
+public class Page8ShadowController : MonoBehaviour
+{
+    [Header("UI References")]
+    [SerializeField] private Image _shadowImage;
+    [SerializeField] private Image _shadowCircleImage;
+    
+    [Header("AR References")]
+    [SerializeField] private ARTrackedImageManager _trackedImageManager;
+    [SerializeField] private string _targetImageName = "page8Placeholder";
+
+    [Header("Settings")]
+    [SerializeField] private float _holdDuration = 3f;
+    [SerializeField] private float _fadeDuration = 1f;
+    [SerializeField] private float _crossFadeDuration = 0.8f;
+    [SerializeField] private float _preFadeShrinkDuration = 0.4f;
+    
+    [Header("Dependencies")]
+    [SerializeField] private Page8CompletionSequence _completionSequence;
+    [SerializeField] private PendantManager _pendantManager;
+
+    private Coroutine _activeFadeCoroutine;
+    private bool _isCompleted;
+    private float _targetAlpha = -1f;
+    private bool _hasCrossFadedToCircle;
+
+    private void Awake()
+    {
+        if (_shadowImage != null)
+        {
+            var handler = _shadowImage.gameObject.AddComponent<ShadowPointerHandler>();
+            handler.OnPointerDownAction = HandlePointerDown;
+            handler.OnPointerUpAction = HandlePointerUp;
+            _shadowImage.enabled = false;
+        }
+        else
+        {
+            Debug.LogWarning("[Page8ShadowController] _shadowImage is missing.");
+        }
+
+        if (_shadowCircleImage != null)
+        {
+            Color c = _shadowCircleImage.color;
+            _shadowCircleImage.color = new Color(c.r, c.g, c.b, 0f);
+            _shadowCircleImage.enabled = false;
+            _shadowCircleImage.raycastTarget = false;
+        }
+    }
+
+    private void Start()
+    {
+        if (_shadowCircleImage != null)
+        {
+            // Force the circle size via code
+            _shadowCircleImage.rectTransform.sizeDelta = new Vector2(1500f, 1500f);
+        }
+    }
+
+    private void OnEnable()
+    {
+        if (_trackedImageManager != null)
+        {
+            _trackedImageManager.trackablesChanged.AddListener(OnTrackablesChanged);
+        }
+        else
+        {
+            Debug.LogWarning("[Page8ShadowController] _trackedImageManager is missing.");
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (_trackedImageManager != null)
+        {
+            _trackedImageManager.trackablesChanged.RemoveListener(OnTrackablesChanged);
+        }
+    }
+
+    private void OnTrackablesChanged(ARTrackablesChangedEventArgs<ARTrackedImage> eventArgs)
+    {
+        foreach (var trackedImage in eventArgs.added)
+        {
+            CheckImage(trackedImage);
+        }
+        foreach (var trackedImage in eventArgs.updated)
+        {
+            CheckImage(trackedImage);
+        }
+    }
+
+    private void CheckImage(ARTrackedImage trackedImage)
+    {
+        if (_isCompleted) return;
+        
+        if (trackedImage.referenceImage.name == _targetImageName)
+        {
+            if (trackedImage.trackingState == TrackingState.Tracking)
+            {
+                if (_shadowImage != null && !_shadowImage.enabled)
+                {
+                    _shadowImage.enabled = true;
+                }
+            }
+        }
+    }
+
+    private IEnumerator CrossFadeRoutine(bool toCircle)
+    {
+        if (_shadowImage == null || _shadowCircleImage == null) yield break;
+
+        if (_targetAlpha < 0f)
+        {
+            _targetAlpha = _shadowImage.color.a;
+        }
+
+        _shadowCircleImage.enabled = true;
+
+        Color rectColor = _shadowImage.color;
+        Color circleColor = _shadowCircleImage.color;
+
+        float startRectAlpha = rectColor.a;
+        float startCircleAlpha = circleColor.a;
+
+        float targetRectAlpha = toCircle ? 0f : _targetAlpha;
+        float targetCircleAlpha = toCircle ? _targetAlpha : 0f;
+
+        float elapsed = 0f;
+        while (elapsed < _crossFadeDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = elapsed / _crossFadeDuration;
+            
+            _shadowImage.color = new Color(rectColor.r, rectColor.g, rectColor.b, Mathf.Lerp(startRectAlpha, targetRectAlpha, t));
+            _shadowCircleImage.color = new Color(circleColor.r, circleColor.g, circleColor.b, Mathf.Lerp(startCircleAlpha, targetCircleAlpha, t));
+            
+            yield return null;
+        }
+
+        _shadowImage.color = new Color(rectColor.r, rectColor.g, rectColor.b, targetRectAlpha);
+        _shadowCircleImage.color = new Color(circleColor.r, circleColor.g, circleColor.b, targetCircleAlpha);
+    }
+
+    private float _holdProgress;
+    private bool _isHolding;
+
+    private void Update()
+    {
+        if (_isCompleted) return;
+
+        if (_isHolding)
+        {
+            _holdProgress += Time.deltaTime / _holdDuration;
+            
+            if (!_hasCrossFadedToCircle && (_holdProgress * _holdDuration) >= _preFadeShrinkDuration)
+            {
+                _hasCrossFadedToCircle = true;
+                if (_activeFadeCoroutine != null) StopCoroutine(_activeFadeCoroutine);
+                _activeFadeCoroutine = StartCoroutine(CrossFadeRoutine(true));
+            }
+        }
+        else
+        {
+            _holdProgress -= Time.deltaTime / _holdDuration;
+        }
+
+        _holdProgress = Mathf.Clamp01(_holdProgress);
+
+        if (_hasCrossFadedToCircle)
+        {
+            if (_shadowCircleImage != null)
+                _shadowCircleImage.transform.localScale = Vector3.one * (1f - _holdProgress);
+        }
+        else
+        {
+            if (_shadowImage != null)
+                _shadowImage.transform.localScale = Vector3.one * (1f - _holdProgress);
+        }
+
+        if (_holdProgress >= 1f && !_isCompleted)
+        {
+            _isCompleted = true;
+            
+            if (_shadowCircleImage != null)
+                _shadowCircleImage.enabled = false;
+            
+            if (_pendantManager != null)
+                _pendantManager.CollectYellowSpark();
+            else
+                Debug.LogWarning("[Page8ShadowController] _pendantManager is missing.");
+                
+            if (_completionSequence != null)
+                _completionSequence.TriggerCompletion();
+            else
+                Debug.LogWarning("[Page8ShadowController] _completionSequence is missing.");
+                
+            StartCoroutine(FadeOutShadow());
+        }
+    }
+
+    private void HandlePointerDown()
+    {
+        if (_isCompleted) return;
+        _isHolding = true;
+    }
+
+    private void HandlePointerUp()
+    {
+        if (_isCompleted) return;
+        _isHolding = false;
+
+        if (_hasCrossFadedToCircle && _holdProgress < 1f)
+        {
+            _hasCrossFadedToCircle = false;
+            if (_activeFadeCoroutine != null) StopCoroutine(_activeFadeCoroutine);
+            _activeFadeCoroutine = StartCoroutine(CrossFadeRoutine(false));
+        }
+    }
+
+    private IEnumerator FadeOutShadow()
+    {
+        if (_shadowCircleImage == null) yield break;
+        
+        Color startColor = _shadowCircleImage.color;
+        float elapsed = 0f;
+        while (elapsed < _fadeDuration)
+        {
+            elapsed += Time.deltaTime;
+            float alpha = Mathf.Lerp(startColor.a, 0f, elapsed / _fadeDuration);
+            _shadowCircleImage.color = new Color(startColor.r, startColor.g, startColor.b, alpha);
+            yield return null;
+        }
+        
+        _shadowCircleImage.enabled = false;
+    }
+
+    private class ShadowPointerHandler : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
+    {
+        public System.Action OnPointerDownAction;
+        public System.Action OnPointerUpAction;
+
+        public void OnPointerDown(PointerEventData eventData) => OnPointerDownAction?.Invoke();
+        public void OnPointerUp(PointerEventData eventData) => OnPointerUpAction?.Invoke();
+    }
+}

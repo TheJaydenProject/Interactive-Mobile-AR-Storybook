@@ -51,6 +51,7 @@
   <Project Path="Unity.RenderPipelines.Universal.2D.Editor.Overrides.csproj" />
   <Project Path="Unity.XR.ARCore.Editor.csproj" />
   <Project Path="Unity.InternalAPIEngineBridge.007.csproj" />
+  <Project Path="Unity.2D.Sprite.Editor.csproj" />
   <Project Path="Unity.XR.CoreUtils.Editor.csproj" />
   <Project Path="Unity.InternalAPIEditorBridge.007.csproj" />
   <Project Path="Unity.RenderPipelines.Core.Editor.Shared.csproj" />
