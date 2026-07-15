@@ -20,15 +20,16 @@ public class Page10MeterController : MonoBehaviour
     private const int TotalRequired = 10;
     private int _catchCount;
 
-    // Unlit and three lit tiers
     // Unlit tone: #3D362E (Dark grey-bronze)
-    private static readonly Color s_unlit   = new Color(61f/255f,  54f/255f,  46f/255f); 
-    // Lit low: #996600 (segments 0-3)
-    private static readonly Color s_litLow  = new Color(153f/255f, 102f/255f,   0f/255f); 
-    // Lit mid: #FFD700 (segments 4-6)
-    private static readonly Color s_litMid  = new Color(255f/255f, 215f/255f,   0f/255f); 
-    // Lit high: #FFE066 (segments 7-9)
-    private static readonly Color s_litHigh = new Color(255f/255f, 224f/255f, 102f/255f); 
+    private static readonly Color s_unlit   = new Color(61f/255f,  54f/255f,  46f/255f);
+    // Three tiers spaced across hue AND lightness so they read as distinct steps,
+    // not shades of the same yellow (Page 10 = Gold Spark / Joy jar filling with light).
+    // Lit low: #CC6600 (deep amber-orange, segments 0-3)
+    private static readonly Color s_litLow  = new Color(204f/255f, 102f/255f,   0f/255f);
+    // Lit mid: #FFB300 (saturated gold-orange, segments 4-6)
+    private static readonly Color s_litMid  = new Color(255f/255f, 179f/255f,   0f/255f);
+    // Lit high: #FFEB3B (bright sunny yellow, segments 7-9)
+    private static readonly Color s_litHigh = new Color(255f/255f, 235f/255f,  59f/255f);
 
     private void Start()
     {
