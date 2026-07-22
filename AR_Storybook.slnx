@@ -19,6 +19,7 @@
   <Project Path="Unity.Burst.csproj" />
   <Project Path="Unity.Tutorials.Core.Editor.csproj" />
   <Project Path="Unity.XR.ARKit.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.XR.Interaction.Toolkit.csproj" />
   <Project Path="Unity.XR.ARSubsystems.csproj" />
   <Project Path="Unity.VisualStudio.Editor.csproj" />
@@ -60,7 +61,6 @@
   <Project Path="Unity.XR.Management.Editor.csproj" />
   <Project Path="Unity.XR.Interaction.Toolkit.CodeSamples.Tests.csproj" />
   <Project Path="Unity.RenderPipelines.Core.Runtime.Shared.csproj" />
-  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.InputSystem.ForUI.csproj" />
   <Project Path="Unity.XR.Interaction.Toolkit.Analytics.Hooks.Editor.csproj" />
   <Project Path="Unity.Collections.CodeGen.csproj" />

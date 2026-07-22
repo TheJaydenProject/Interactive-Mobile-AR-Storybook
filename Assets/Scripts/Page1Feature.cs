@@ -30,6 +30,9 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private float _cloudYOffsetMin = 0.05f;
     [SerializeField] private float _cloudYOffsetMax = 0.15f;
 
+    [Header("Scan Lock")]
+    [SerializeField] private AppStateManager _appStateManager;
+
     // How opaque the overlay starts and how low it goes before the last cloud.
     private const float OverlayMaxAlpha = 0.85f;
     private const float OverlayMinAlpha = 0.4f;
@@ -38,6 +41,16 @@ public class Page1Manager : MonoBehaviour
     private int _poppedCount = 0;
     private bool _sequenceActive = false;
     private Coroutine _fadeCoroutine;
+
+    // Mirrors "do I currently hold the shared AppStateManager lock" — separate from
+    // _sequenceActive (which also drives tracking-loss/regain) so the cancel guard below can't
+    // be fooled by a stale value. Self-heals via HandleFeatureActiveChanged since only the page
+    // that holds the lock could ever observe it become inactive.
+    private bool _isActive;
+
+    // Set when the child backs out via Back; blocks this page re-triggering while its image
+    // stays in view, cleared once the image leaves tracking so looking back re-arms it.
+    private bool _suppressedWhileTracked;
 
     private void Awake()
     {
@@ -52,11 +65,23 @@ public class Page1Manager : MonoBehaviour
     private void OnEnable()
     {
         _trackedImageManager.trackablesChanged.AddListener(OnTrackablesChanged);
+
+        if (_appStateManager != null)
+        {
+            _appStateManager.OnFeatureCancelled += HandleFeatureCancelled;
+            _appStateManager.OnFeatureActiveChanged += HandleFeatureActiveChanged;
+        }
     }
 
     private void OnDisable()
     {
         _trackedImageManager.trackablesChanged.RemoveListener(OnTrackablesChanged);
+
+        if (_appStateManager != null)
+        {
+            _appStateManager.OnFeatureCancelled -= HandleFeatureCancelled;
+            _appStateManager.OnFeatureActiveChanged -= HandleFeatureActiveChanged;
+        }
     }
 
     private void Update()
@@ -93,22 +118,64 @@ public class Page1Manager : MonoBehaviour
 
             if (image.trackingState == TrackingState.Tracking && !_sequenceActive)
                 StartSequence(image.transform);
-            else if (image.trackingState == TrackingState.None && _sequenceActive)
-                StopSequence();
+            else if (image.trackingState == TrackingState.None)
+            {
+                // Clear suppression regardless of _sequenceActive: after a cancel that flag is
+                // already false, but the image leaving view is exactly the re-arm signal.
+                _suppressedWhileTracked = false;
+                if (_sequenceActive) StopSequence();
+            }
         }
 
         foreach (var removed in args.removed)
         {
             if (removed.Value.referenceImage.name != "page1Placeholder") continue;
+            _suppressedWhileTracked = false;
             StopSequence();
         }
     }
 
     private void StartSequence(Transform anchor)
     {
+        // Backed out of this page but still pointed at it — stay quiet until it's re-acquired.
+        if (_suppressedWhileTracked) return;
+
+        // Ignore the scan outright if another page's feature is already active; only this
+        // page's own completion (below) releases the shared lock.
+        if (!TryBeginFeature()) return;
+
         _sequenceActive = true;
         _poppedCount = 0;
         StartCoroutine(FadeInThenSpawn(anchor));
+    }
+
+    private bool TryBeginFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogError("[Page1Manager] _appStateManager not assigned; ignoring scan.");
+            return false;
+        }
+        bool claimed = _appStateManager.TryBeginFeature();
+        if (claimed) _isActive = true;
+        return claimed;
+    }
+
+    private void HandleFeatureActiveChanged(bool isActive)
+    {
+        if (!isActive) _isActive = false;
+    }
+
+    // Back button pressed mid-feature. Only react if this page is the one actually running —
+    // the shared cancel event reaches all six page scripts.
+    private void HandleFeatureCancelled()
+    {
+        if (!_isActive) return;
+
+        StopSequence(); // stops the fade coroutine, despawns clouds — no partial credit exists for Page 1 anyway
+        _suppressedWhileTracked = true;
+        _isActive = false;
+        EndFeature();
     }
 
     private void StopSequence()
@@ -213,6 +280,21 @@ public class Page1Manager : MonoBehaviour
             : Mathf.Lerp(OverlayMaxAlpha, OverlayMinAlpha, (float)_poppedCount / (_cloudCount - 1));
 
         FadeTo(targetAlpha, _popFadeDuration);
+
+        // Page 1 has no dedicated completion-sequence overlay like later pages; the grey
+        // overlay finishing its fade-out is the closest thing it has to a transition.
+        if (_poppedCount >= _cloudCount)
+            EndFeature();
+    }
+
+    private void EndFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogWarning("[Page1Manager] _appStateManager not assigned; scanner lock not released.");
+            return;
+        }
+        _appStateManager.EndFeature();
     }
 
     private void DespawnClouds()

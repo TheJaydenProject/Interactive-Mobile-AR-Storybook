@@ -21,6 +21,9 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     [Header("Completion")]
     [SerializeField] private Page6CompletionSequence _completionSequence;
 
+    [Header("Scan Lock")]
+    [SerializeField] private AppStateManager _appStateManager;
+
     private static readonly Color LitColor   = new Color(1f,         68f / 255f, 0f, 1f); // #FF4400
     private static readonly Color UnlitColor = new Color(51f / 255f, 17f / 255f, 0f, 1f); // #331100
 
@@ -34,6 +37,16 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     private bool      _isListening;
     private bool      _completionTriggered;
     private Coroutine _restartCoroutine;
+    private Coroutine _fadeInCoroutine;
+
+    // Mirrors "do I currently hold the shared AppStateManager lock" for the cancel guard.
+    // Self-heals via HandleFeatureActiveChanged so a stale true can never linger past this
+    // page's own completion or cancellation.
+    private bool _isActive;
+
+    // Set when the child backs out via Back; blocks this page re-triggering while its image
+    // stays in view, cleared once the image leaves tracking so looking back re-arms it.
+    private bool _suppressedWhileTracked;
 
     private void Start()
     {
@@ -49,12 +62,24 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
             _trackedImageManager.trackablesChanged.AddListener(OnTrackablesChanged);
         else
             Debug.LogError("[Page6SpeechController] ARTrackedImageManager not assigned.");
+
+        if (_appStateManager != null)
+        {
+            _appStateManager.OnFeatureCancelled += HandleFeatureCancelled;
+            _appStateManager.OnFeatureActiveChanged += HandleFeatureActiveChanged;
+        }
     }
 
     private void OnDisable()
     {
         if (_trackedImageManager != null)
             _trackedImageManager.trackablesChanged.RemoveListener(OnTrackablesChanged);
+
+        if (_appStateManager != null)
+        {
+            _appStateManager.OnFeatureCancelled -= HandleFeatureCancelled;
+            _appStateManager.OnFeatureActiveChanged -= HandleFeatureActiveChanged;
+        }
     }
 
     private void OnTrackablesChanged(ARTrackablesChangedEventArgs<ARTrackedImage> args)
@@ -69,15 +94,23 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         {
             if (image.referenceImage.name != _imageTargetName) continue;
 
-            if (image.trackingState == TrackingState.Tracking && !_isListening)
-                StartListening();
-            else if (image.trackingState == TrackingState.None && _isListening)
-                StopListening();
+            if (image.trackingState == TrackingState.Tracking)
+            {
+                if (!_isListening) StartListening();
+            }
+            else if (image.trackingState == TrackingState.None)
+            {
+                // Clear suppression regardless of _isListening: after a cancel that flag is
+                // already false, but the image leaving view is exactly the re-arm signal.
+                _suppressedWhileTracked = false;
+                if (_isListening) StopListening();
+            }
         }
 
         foreach (var removed in args.removed)
         {
             if (removed.Value.referenceImage.name != _imageTargetName) continue;
+            _suppressedWhileTracked = false;
             StopListening();
         }
     }
@@ -85,9 +118,54 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     public void StartListening()
     {
         if (_completionTriggered) return;
-        StartCoroutine(FadeInWords());
+        // Backed out of this page but still pointed at it — stay quiet until it's re-acquired.
+        if (_suppressedWhileTracked) return;
+        // Ignore the scan outright if another page's feature is already active; only this
+        // page's own completion releases the shared lock.
+        if (!TryBeginFeature()) return;
+
+        _fadeInCoroutine = StartCoroutine(FadeInWords());
         _isListening = true;
         SpeechToText.RequestPermissionAsync(( permission ) => OnPermissionResult(permission));
+    }
+
+    private bool TryBeginFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogError("[Page6SpeechController] _appStateManager not assigned; ignoring scan.");
+            return false;
+        }
+        bool claimed = _appStateManager.TryBeginFeature();
+        if (claimed) _isActive = true;
+        return claimed;
+    }
+
+    private void HandleFeatureActiveChanged(bool isActive)
+    {
+        if (!isActive) _isActive = false;
+    }
+
+    // Back button pressed mid-feature. Only react if this page is the one actually running —
+    // the shared cancel event reaches all six page scripts.
+    private void HandleFeatureCancelled()
+    {
+        if (!_isActive) return;
+
+        StopListening(); // no partial credit — TriggerCompletion() was never reached
+        _suppressedWhileTracked = true;
+        _isActive = false;
+        EndFeature();
+    }
+
+    private void EndFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogWarning("[Page6SpeechController] _appStateManager not assigned; scanner lock not released.");
+            return;
+        }
+        _appStateManager.EndFeature();
     }
 
     public void StopListening()
@@ -97,6 +175,11 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         {
             StopCoroutine(_restartCoroutine);
             _restartCoroutine = null;
+        }
+        if (_fadeInCoroutine != null)
+        {
+            StopCoroutine(_fadeInCoroutine);
+            _fadeInCoroutine = null;
         }
         SpeechToText.ForceStop();
         _page6WordsParent?.SetActive(false);

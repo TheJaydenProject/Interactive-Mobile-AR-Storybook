@@ -17,6 +17,9 @@ public class Page8CompletionSequence : MonoBehaviour
     [Header("References")]
     [SerializeField] private PendantManager _pendantManager;
 
+    [Header("Scan Lock")]
+    [SerializeField] private AppStateManager _appStateManager;
+
     private bool _triggered;
 
     private void Awake()
@@ -51,6 +54,19 @@ public class Page8CompletionSequence : MonoBehaviour
 
         if (_completionOverlay != null)
             _completionOverlay.gameObject.SetActive(false);
+
+        // Transition has fully played out — release the shared lock so scanning resumes.
+        EndFeature();
+    }
+
+    private void EndFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogWarning("[Page8CompletionSequence] _appStateManager not assigned; scanner lock not released.");
+            return;
+        }
+        _appStateManager.EndFeature();
     }
 
     private IEnumerator FadeInOverlay()

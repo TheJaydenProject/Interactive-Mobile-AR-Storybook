@@ -65,6 +65,17 @@ public class Page11DragController : MonoBehaviour
     private float    _heldCameraDistance;
     private Vector2  _lastPointerPos;
 
+    // Lives on the always-active tracker GameObject (same as Page10OrbController before its
+    // perf fix), not under the page's 3D content, so Update() must be told explicitly when
+    // Page 11 is actually being shown — otherwise dragging/tapping sparks works before the
+    // page is ever scanned.
+    private bool _isActive;
+
+    public void SetActive(bool active)
+    {
+        _isActive = active;
+    }
+
     private void Awake()
     {
         // Dynamically scale the dock radius so spheres always hug the Phoenix tightly no matter the size
@@ -106,12 +117,27 @@ public class Page11DragController : MonoBehaviour
 
     private void Update()
     {
+        if (!_isActive) return;
         if (Camera.main == null) return;
 
         if (_heldIndex == -1) HandlePickup();
         else                  HandleDragAndRelease();
 
         UpdateFloatingMotion();
+    }
+
+    /// <summary>
+    /// Called by Page11ARTracker when the Back button cancels Page 11 mid-drag. Releases
+    /// whatever spark is currently held back to its resting spot (mirrors a failed drop) so
+    /// nothing is left stuck mid-air or with its collider disabled for the next attempt.
+    /// </summary>
+    public void CancelDrag()
+    {
+        if (_heldIndex == -1) return;
+
+        ReturnSpark(_heldIndex);
+        _heldCollider = null;
+        _heldIndex = -1;
     }
 
     private void UpdateFloatingMotion()

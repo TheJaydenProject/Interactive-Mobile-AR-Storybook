@@ -14,6 +14,9 @@ public class Page10CompletionSequence : MonoBehaviour
     [SerializeField] private Page10MeterController _page10MeterController;
     [SerializeField] private PendantManager _pendantManager;
 
+    [Header("Scan Lock")]
+    [SerializeField] private AppStateManager _appStateManager;
+
     private bool _triggered;
 
     private void Awake()
@@ -51,6 +54,19 @@ public class Page10CompletionSequence : MonoBehaviour
 
         if (_completionOverlay != null)
             _completionOverlay.gameObject.SetActive(false);
+
+        // Transition has fully played out — release the shared lock so scanning resumes.
+        EndFeature();
+    }
+
+    private void EndFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogWarning("[Page10CompletionSequence] _appStateManager not assigned; scanner lock not released.");
+            return;
+        }
+        _appStateManager.EndFeature();
     }
 
     private IEnumerator FadeInOverlay()

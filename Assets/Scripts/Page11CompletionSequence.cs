@@ -28,6 +28,9 @@ public class Page11CompletionSequence : MonoBehaviour
     [Tooltip("Objects to completely hide at the end of the sequence (e.g., the Phoenix and the sparks).")]
     [SerializeField] private GameObject[] _objectsToDisable;
 
+    [Header("Scan Lock")]
+    [SerializeField] private AppStateManager _appStateManager;
+
     private bool _triggered;
     private bool _transformed;
 
@@ -100,6 +103,19 @@ public class Page11CompletionSequence : MonoBehaviour
 
         if (_completionOverlay != null)
             _completionOverlay.gameObject.SetActive(false);
+
+        // Transition has fully played out — release the shared lock so scanning resumes.
+        EndFeature();
+    }
+
+    private void EndFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogWarning("[Page11CompletionSequence] _appStateManager not assigned; scanner lock not released.");
+            return;
+        }
+        _appStateManager.EndFeature();
     }
 
     private void TransformPhoenix()

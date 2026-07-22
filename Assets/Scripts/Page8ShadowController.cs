@@ -24,10 +24,22 @@ public class Page8ShadowController : MonoBehaviour
     [SerializeField] private Page8CompletionSequence _completionSequence;
     [SerializeField] private PendantManager _pendantManager;
 
+    [Header("Scan Lock")]
+    [SerializeField] private AppStateManager _appStateManager;
+
     private bool _isCompleted;
     private Material _morphMaterial;
     private float _holdProgress;
     private bool _isHolding;
+
+    // Mirrors "do I currently hold the shared AppStateManager lock" for the cancel guard, and
+    // also gates Update() so its per-frame hold/morph work doesn't run before this page is
+    // scanned (it previously ran unconditionally, same class of issue Page10OrbController had).
+    private bool _isActive;
+
+    // Set when the child backs out via Back; blocks this page re-triggering while its image
+    // stays in view, cleared once the image leaves tracking so looking back re-arms it.
+    private bool _suppressedWhileTracked;
 
     private void Awake()
     {
@@ -60,6 +72,12 @@ public class Page8ShadowController : MonoBehaviour
         {
             Debug.LogWarning("[Page8ShadowController] _trackedImageManager is missing.");
         }
+
+        if (_appStateManager != null)
+        {
+            _appStateManager.OnFeatureCancelled += HandleFeatureCancelled;
+            _appStateManager.OnFeatureActiveChanged += HandleFeatureActiveChanged;
+        }
     }
 
     private void OnDisable()
@@ -67,6 +85,12 @@ public class Page8ShadowController : MonoBehaviour
         if (_trackedImageManager != null)
         {
             _trackedImageManager.trackablesChanged.RemoveListener(OnTrackablesChanged);
+        }
+
+        if (_appStateManager != null)
+        {
+            _appStateManager.OnFeatureCancelled -= HandleFeatureCancelled;
+            _appStateManager.OnFeatureActiveChanged -= HandleFeatureActiveChanged;
         }
     }
 
@@ -80,27 +104,91 @@ public class Page8ShadowController : MonoBehaviour
         {
             CheckImage(trackedImage);
         }
+        foreach (var trackedImage in eventArgs.removed)
+        {
+            // Image dropped entirely — re-arm so looking back replays.
+            if (trackedImage.referenceImage.name == _targetImageName)
+                _suppressedWhileTracked = false;
+        }
     }
 
     private void CheckImage(ARTrackedImage trackedImage)
     {
         if (_isCompleted) return;
-        
+
         if (trackedImage.referenceImage.name == _targetImageName)
         {
             if (trackedImage.trackingState == TrackingState.Tracking)
             {
+                // Backed out of this page but still pointed at it — stay quiet until re-acquired.
+                if (_suppressedWhileTracked) return;
+
                 if (_shadowImage != null && !_shadowImage.enabled)
                 {
+                    // Ignore the scan outright if another page's feature is already active;
+                    // only this page's own completion releases the shared lock.
+                    if (!TryBeginFeature()) return;
                     _shadowImage.enabled = true;
                 }
+            }
+            else if (trackedImage.trackingState == TrackingState.None)
+            {
+                _suppressedWhileTracked = false; // image left view → re-arm so looking back replays
             }
         }
     }
 
+    private bool TryBeginFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogError("[Page8ShadowController] _appStateManager not assigned; ignoring scan.");
+            return false;
+        }
+        bool claimed = _appStateManager.TryBeginFeature();
+        if (claimed) _isActive = true;
+        return claimed;
+    }
+
+    private void HandleFeatureActiveChanged(bool isActive)
+    {
+        if (!isActive) _isActive = false;
+    }
+
+    // Back button pressed mid-feature. Only react if this page is the one actually running —
+    // the shared cancel event reaches all six page scripts.
+    private void HandleFeatureCancelled()
+    {
+        if (!_isActive) return;
+
+        _isHolding = false;
+        _holdProgress = 0f; // no partial credit — reset so a future attempt starts from scratch
+
+        if (_shadowImage != null)
+        {
+            _shadowImage.transform.localScale = Vector3.one;
+            // Disabling it re-arms CheckImage()'s "!_shadowImage.enabled" claim gate for next time.
+            _shadowImage.enabled = false;
+        }
+
+        _suppressedWhileTracked = true;
+        _isActive = false;
+        EndFeature();
+    }
+
+    private void EndFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogWarning("[Page8ShadowController] _appStateManager not assigned; scanner lock not released.");
+            return;
+        }
+        _appStateManager.EndFeature();
+    }
+
     private void Update()
     {
-        if (_isCompleted) return;
+        if (_isCompleted || !_isActive) return;
 
         if (_isHolding)
         {

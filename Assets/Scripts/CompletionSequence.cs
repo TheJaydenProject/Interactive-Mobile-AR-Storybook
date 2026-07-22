@@ -22,6 +22,9 @@ public class CompletionSequence : MonoBehaviour
     [SerializeField] private Canvas              _arCanvas;
     [SerializeField] private PendantManager      _pendantManager;
 
+    [Header("Scan Lock")]
+    [SerializeField] private AppStateManager _appStateManager;
+
     private bool _triggered;
 
     private void Awake()
@@ -73,6 +76,9 @@ public class CompletionSequence : MonoBehaviour
         Debug.Log("[CompletionSequence] Step 7 — cleanup");
         NotifyPendantManager();
         Cleanup();
+
+        // Transition has fully played out — release the shared lock so scanning resumes.
+        EndFeature();
     }
 
     private IEnumerator FadeOutUI()
@@ -159,6 +165,16 @@ public class CompletionSequence : MonoBehaviour
         Debug.Log("[CompletionSequence] Destroying " + activeDrops.Length + " active drops");
         foreach (DropBehaviour drop in activeDrops)
             Destroy(drop.gameObject);
+    }
+
+    private void EndFeature()
+    {
+        if (_appStateManager == null)
+        {
+            Debug.LogWarning("[CompletionSequence] _appStateManager not assigned; scanner lock not released.");
+            return;
+        }
+        _appStateManager.EndFeature();
     }
 
     private void NotifyPendantManager()

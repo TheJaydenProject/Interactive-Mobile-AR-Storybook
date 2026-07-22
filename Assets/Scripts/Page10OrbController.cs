@@ -17,6 +17,16 @@ public class Page10OrbController : MonoBehaviour
     private Vector3[] _initialLocalPositions;
     private float[] _phaseOffsets;
 
+    // Lives on the always-active tracker GameObject, not under the page's 3D content, so
+    // Update() must be told explicitly when Page 10 is actually being shown — otherwise it
+    // raycasts and animates orbs (and could register catches) before the page is ever scanned.
+    private bool _isActive;
+
+    public void SetActive(bool active)
+    {
+        _isActive = active;
+    }
+
     private void Awake()
     {
         if (_orbs != null)
@@ -37,9 +47,8 @@ public class Page10OrbController : MonoBehaviour
 
     private void Update()
     {
-        // Temporary log to confirm Update is running
-        Debug.Log("[Page10OrbController] Update is running.");
-        
+        if (!_isActive) return;
+
         HandleInput();
         UpdateFloatingMotion();
     }
