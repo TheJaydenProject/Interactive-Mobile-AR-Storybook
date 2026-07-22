@@ -102,10 +102,21 @@ public class Page11DragController : MonoBehaviour
                 // Pull their initial positions closer to the center proportionally to the scale down
                 _sparks[i].localPosition *= _globalScaleMultiplier;
                 
-                // Apply a small 3D random scatter so they appear at different height levels
+                // Apply a small random scatter so they don't sit in a perfect ring
                 Vector3 rand = Random.insideUnitSphere * _scatterRadius;
                 _sparks[i].localPosition += rand;
-                
+
+                // Lift each spark to the Phoenix's height so they float around the cube instead
+                // of collapsing toward the parent origin below it (the localPosition *= scale
+                // above pulls everything down). World-space match, so it holds even if the
+                // Phoenix and sparks are re-parented differently later.
+                if (_phoenixCollider != null)
+                {
+                    Vector3 world = _sparks[i].position;
+                    world.y = _phoenixCollider.transform.position.y;
+                    _sparks[i].position = world;
+                }
+
                 _initialLocalPositions[i] = _sparks[i].localPosition;
                 _phaseOffsets[i] = Random.Range(0f, Mathf.PI * 2f);
             }

@@ -104,10 +104,11 @@ public class Page8ShadowController : MonoBehaviour
         {
             CheckImage(trackedImage);
         }
-        foreach (var trackedImage in eventArgs.removed)
+        foreach (var removed in eventArgs.removed)
         {
-            // Image dropped entirely — re-arm so looking back replays.
-            if (trackedImage.referenceImage.name == _targetImageName)
+            // Image dropped entirely — re-arm so looking back replays. The removed collection
+            // yields KeyValuePair<TrackableId, ARTrackedImage>, so reach the image via .Value.
+            if (removed.Value.referenceImage.name == _targetImageName)
                 _suppressedWhileTracked = false;
         }
     }
