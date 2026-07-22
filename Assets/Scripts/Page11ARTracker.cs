@@ -91,6 +91,14 @@ public class Page11ARTracker : MonoBehaviour
         {
             if (image.referenceImage.name != "page11Placeholder") continue;
 
+            // Re-arm as soon as the image stops being solidly tracked. XR Simulation / ARCore
+            // usually report Limited (not None) on look-away, so keying only off None left the
+            // suppression stuck and the feature never reappeared. ponytail: clears on the first
+            // non-Tracking frame — heavy tracking flicker could re-arm early; add a short debounce
+            // if that shows up on-device.
+            if (image.trackingState != TrackingState.Tracking)
+                _suppressedWhileTracked = false;
+
             if (image.trackingState == TrackingState.Tracking)
             {
                 if (_suppressedWhileTracked) continue; // backed out; wait for a fresh acquisition
@@ -102,7 +110,6 @@ public class Page11ARTracker : MonoBehaviour
             }
             else if (image.trackingState == TrackingState.None)
             {
-                _suppressedWhileTracked = false; // image left view → re-arm so looking back replays
                 if (_activeTrackedImage == image)
                     _activeTrackedImage = null;
                 HideUI();

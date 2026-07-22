@@ -132,9 +132,13 @@ public class Page8ShadowController : MonoBehaviour
                     _shadowImage.enabled = true;
                 }
             }
-            else if (trackedImage.trackingState == TrackingState.None)
+            else
             {
-                _suppressedWhileTracked = false; // image left view → re-arm so looking back replays
+                // Any non-Tracking state (Limited or None) means the image is no longer solidly
+                // in view → re-arm. XR Simulation / ARCore usually report Limited (not None) on
+                // look-away, so keying only off None left the suppression stuck. ponytail: clears
+                // on the first non-Tracking frame; add a short debounce if flicker re-arms early.
+                _suppressedWhileTracked = false;
             }
         }
     }

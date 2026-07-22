@@ -94,16 +94,21 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         {
             if (image.referenceImage.name != _imageTargetName) continue;
 
+            // Re-arm as soon as the image stops being solidly tracked. XR Simulation / ARCore
+            // usually report Limited (not None) on look-away, so keying only off None left the
+            // suppression stuck and the feature never reappeared. ponytail: clears on the first
+            // non-Tracking frame — heavy tracking flicker could re-arm early; add a short debounce
+            // if that shows up on-device.
+            if (image.trackingState != TrackingState.Tracking)
+                _suppressedWhileTracked = false;
+
             if (image.trackingState == TrackingState.Tracking)
             {
                 if (!_isListening) StartListening();
             }
-            else if (image.trackingState == TrackingState.None)
+            else if (image.trackingState == TrackingState.None && _isListening)
             {
-                // Clear suppression regardless of _isListening: after a cancel that flag is
-                // already false, but the image leaving view is exactly the re-arm signal.
-                _suppressedWhileTracked = false;
-                if (_isListening) StopListening();
+                StopListening();
             }
         }
 
