@@ -56,6 +56,7 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private GameObject _instructionGroup;
     [SerializeField] private GameObject _instructionGroup2;
     [SerializeField] private float _instructionDelay = 2.5f;
+    [SerializeField] private float _cloudUnlockDelay = 1.0f;
 
     [Header("Finish")]
     [SerializeField] private GameObject _finishGroup;
@@ -74,6 +75,7 @@ public class Page1Manager : MonoBehaviour
     private Coroutine _fadeCoroutine;
     private Coroutine _sequenceCoroutine;
     private Coroutine _instructionDelayCoroutine;
+    private Coroutine _cloudUnlockDelayCoroutine;
     private Coroutine _finishDelayCoroutine;
     private Coroutine _islandFadeOutCoroutine;
     private GameObject _islandInstance;
@@ -251,6 +253,12 @@ public class Page1Manager : MonoBehaviour
         {
             StopCoroutine(_instructionDelayCoroutine);
             _instructionDelayCoroutine = null;
+        }
+
+        if (_cloudUnlockDelayCoroutine != null)
+        {
+            StopCoroutine(_cloudUnlockDelayCoroutine);
+            _cloudUnlockDelayCoroutine = null;
         }
 
         if (_finishDelayCoroutine != null)
@@ -481,6 +489,12 @@ public class Page1Manager : MonoBehaviour
         if (_instructionGroup2 != null)
             _instructionGroup2.SetActive(false);
 
+        _cloudUnlockDelayCoroutine = StartCoroutine(UnlockCloudsAfterDelay());
+    }
+
+    private IEnumerator UnlockCloudsAfterDelay()
+    {
+        yield return new WaitForSeconds(_cloudUnlockDelay);
         _cloudsLocked = false;
         _cloudsUnlockedFrame = Time.frameCount;
     }
