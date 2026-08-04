@@ -34,6 +34,9 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private Image _greyOverlay;
     [SerializeField] private float _fadeInDuration = 1.0f;
     [SerializeField] private float _popFadeDuration = 0.3f;
+    [SerializeField] private AudioSource _overlayFadeInAudioSource;
+    [SerializeField] private AudioClip _overlayFadeInClip;
+    [SerializeField] private float _overlayFadeInSfxLeadTime = 1.0f;
 
     [Header("Clouds")]
     [SerializeField] private GameObject _cloudPrefab;
@@ -52,7 +55,7 @@ public class Page1Manager : MonoBehaviour
     [Header("Instructions")]
     [SerializeField] private GameObject _instructionGroup;
     [SerializeField] private GameObject _instructionGroup2;
-    [SerializeField] private float _instructionDelay = 1.5f;
+    [SerializeField] private float _instructionDelay = 2.5f;
 
     [Header("Finish")]
     [SerializeField] private GameObject _finishGroup;
@@ -76,6 +79,7 @@ public class Page1Manager : MonoBehaviour
     private GameObject _islandInstance;
     private Transform _lastAnchor;
     private bool _cloudsLocked;
+    private int _cloudsUnlockedFrame = -1;
 
     // Mirrors "do I currently hold the shared AppStateManager lock" — separate from
     // _sequenceActive (which also drives tracking-loss/regain) so the cancel guard below can't
@@ -132,6 +136,11 @@ public class Page1Manager : MonoBehaviour
     {
         // Block cloud taps from the moment clouds spawn until the instruction group is dismissed.
         if (_cloudsLocked) return;
+
+        // The tap that dismisses the instruction group runs its UI click handler before this
+        // Update() in the same frame, so wasCompletedThisFrame is still true right as the lock
+        // clears — ignore that same frame so it can't also pop a cloud underneath.
+        if (Time.frameCount == _cloudsUnlockedFrame) return;
 
         // Only check for taps when clouds are present.
         if (_clouds.Count == 0) return;
@@ -364,9 +373,17 @@ public class Page1Manager : MonoBehaviour
 
     private IEnumerator FadeInThenSpawn(Transform anchor)
     {
+        PlayOverlayFadeInSfx();
+        yield return new WaitForSeconds(_overlayFadeInSfxLeadTime);
         FadeTo(OverlayMaxAlpha, _fadeInDuration);
         yield return new WaitForSeconds(_fadeInDuration);
         SpawnClouds(anchor);
+    }
+
+    private void PlayOverlayFadeInSfx()
+    {
+        if (_overlayFadeInAudioSource == null || _overlayFadeInClip == null) return;
+        _overlayFadeInAudioSource.PlayOneShot(_overlayFadeInClip);
     }
 
     private void SpawnClouds(Transform anchor)
@@ -465,6 +482,7 @@ public class Page1Manager : MonoBehaviour
             _instructionGroup2.SetActive(false);
 
         _cloudsLocked = false;
+        _cloudsUnlockedFrame = Time.frameCount;
     }
 
     private void OnCloudPopped(CloudBehaviour cloud)
