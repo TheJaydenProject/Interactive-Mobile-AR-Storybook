@@ -27,6 +27,8 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private float _islandSpawnDelay = 5.0f;
     [SerializeField] private float _islandScale = 1.0f;
     [SerializeField] private Vector3 _islandRotation = Vector3.zero;
+    [SerializeField] private float _islandFadeOutDelay = 2.0f;
+    [SerializeField] private float _islandFadeOutDuration = 1.0f;
 
     [Header("Overlay")]
     [SerializeField] private Image _greyOverlay;
@@ -42,11 +44,19 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private float _cloudScale = 1.0f;
     [SerializeField] private float _cloudXOffset = 0.0f;
     [SerializeField] private float _cloudZOffset = 0.0f;
+    [SerializeField] private AudioSource _cloudPopAudioSource;
+    [SerializeField] private AudioClip _cloudPopClip;
+    [SerializeField] private float _cloudPopPitchMin = 0.9f;
+    [SerializeField] private float _cloudPopPitchMax = 1.15f;
 
     [Header("Instructions")]
     [SerializeField] private GameObject _instructionGroup;
     [SerializeField] private GameObject _instructionGroup2;
     [SerializeField] private float _instructionDelay = 1.5f;
+
+    [Header("Finish")]
+    [SerializeField] private GameObject _finishGroup;
+    [SerializeField] private float _finishDelay = 1.5f;
 
     [Header("Scan Lock")]
     [SerializeField] private AppStateManager _appStateManager;
@@ -61,6 +71,8 @@ public class Page1Manager : MonoBehaviour
     private Coroutine _fadeCoroutine;
     private Coroutine _sequenceCoroutine;
     private Coroutine _instructionDelayCoroutine;
+    private Coroutine _finishDelayCoroutine;
+    private Coroutine _islandFadeOutCoroutine;
     private GameObject _islandInstance;
     private Transform _lastAnchor;
     private bool _cloudsLocked;
@@ -89,6 +101,9 @@ public class Page1Manager : MonoBehaviour
 
         if (_instructionGroup2 != null)
             _instructionGroup2.SetActive(false);
+
+        if (_finishGroup != null)
+            _finishGroup.SetActive(false);
     }
 
     private void OnEnable()
@@ -227,6 +242,21 @@ public class Page1Manager : MonoBehaviour
         {
             StopCoroutine(_instructionDelayCoroutine);
             _instructionDelayCoroutine = null;
+        }
+
+        if (_finishDelayCoroutine != null)
+        {
+            StopCoroutine(_finishDelayCoroutine);
+            _finishDelayCoroutine = null;
+        }
+
+        if (_finishGroup != null)
+            _finishGroup.SetActive(false);
+
+        if (_islandFadeOutCoroutine != null)
+        {
+            StopCoroutine(_islandFadeOutCoroutine);
+            _islandFadeOutCoroutine = null;
         }
 
         DespawnIsland();
@@ -443,6 +473,8 @@ public class Page1Manager : MonoBehaviour
         _clouds.Remove(cloud.gameObject);
         _poppedCount++;
 
+        PlayCloudPopSfx();
+
         // Step the overlay down with each pop. Goes to zero only on the last one.
         float targetAlpha = _poppedCount >= _cloudCount
             ? 0f
@@ -453,7 +485,75 @@ public class Page1Manager : MonoBehaviour
         // Page 1 has no dedicated completion-sequence overlay like later pages; the grey
         // overlay finishing its fade-out is the closest thing it has to a transition.
         if (_poppedCount >= _cloudCount)
-            EndFeature();
+            _finishDelayCoroutine = StartCoroutine(ShowFinishGroupAfterDelay());
+    }
+
+    private void PlayCloudPopSfx()
+    {
+        if (_cloudPopAudioSource == null || _cloudPopClip == null) return;
+
+        // Climbs from _cloudPopPitchMin to _cloudPopPitchMax across however many clouds there
+        // are, so the last pop always lands at the top regardless of _cloudCount.
+        float t = _cloudCount > 1 ? (float)(_poppedCount - 1) / (_cloudCount - 1) : 0f;
+        _cloudPopAudioSource.pitch = Mathf.Lerp(_cloudPopPitchMin, _cloudPopPitchMax, t);
+        _cloudPopAudioSource.PlayOneShot(_cloudPopClip);
+    }
+
+    private IEnumerator ShowFinishGroupAfterDelay()
+    {
+        yield return new WaitForSeconds(_finishDelay);
+
+        if (_finishGroup != null)
+            _finishGroup.SetActive(true);
+    }
+
+    // Wire this to a tap/click event on the finish group so tapping it dismisses the group,
+    // removes the island, and releases the shared scan lock for the next page.
+    public void HideFinishGroup()
+    {
+        if (_finishGroup != null)
+            _finishGroup.SetActive(false);
+
+        _islandFadeOutCoroutine = StartCoroutine(FadeOutIslandThenDestroy());
+        EndFeature();
+    }
+
+    private IEnumerator FadeOutIslandThenDestroy()
+    {
+        yield return new WaitForSeconds(_islandFadeOutDelay);
+
+        if (_islandInstance == null) yield break;
+
+        // Shrinking localScale alone collapses toward the prefab's own pivot, which isn't
+        // centered on its geometry (see the off-center model discussion above) — so instead
+        // pull position toward the combined renderer bounds' center at the same rate the
+        // scale shrinks, making it visually shrink toward its own center.
+        Renderer[] renderers = _islandInstance.GetComponentsInChildren<Renderer>();
+        Vector3 centerPoint = _islandInstance.transform.position;
+        if (renderers.Length > 0)
+        {
+            Bounds combinedBounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                combinedBounds.Encapsulate(renderers[i].bounds);
+            centerPoint = combinedBounds.center;
+        }
+
+        Vector3 startScale = _islandInstance.transform.localScale;
+        Vector3 startPosition = _islandInstance.transform.position;
+        float elapsed = 0f;
+
+        while (elapsed < _islandFadeOutDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / _islandFadeOutDuration);
+            float scaleFactor = 1f - t;
+
+            _islandInstance.transform.localScale = startScale * scaleFactor;
+            _islandInstance.transform.position = Vector3.Lerp(centerPoint, startPosition, scaleFactor);
+            yield return null;
+        }
+
+        DespawnIsland();
     }
 
     private void EndFeature()
