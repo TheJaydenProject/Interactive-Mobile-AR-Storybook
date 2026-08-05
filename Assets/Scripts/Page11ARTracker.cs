@@ -4,7 +4,7 @@ using UnityEngine.XR.ARSubsystems;
 
 /// <summary>
 /// Handles AR tracking for Page 11, showing/hiding the Page 11 3D content
-/// (Phoenix + 4 draggable sparks) based on the page11Placeholder target.
+/// (Phoenix + 4 draggable sparks) based on the page11 target.
 /// Mirrors Page10ARTracker, minus the 2D meter reference (Page 11 has no screen-space UI).
 /// </summary>
 public class Page11ARTracker : MonoBehaviour
@@ -78,7 +78,7 @@ public class Page11ARTracker : MonoBehaviour
     {
         foreach (ARTrackedImage image in args.added)
         {
-            if (image.referenceImage.name != "page11Placeholder") continue;
+            if (image.referenceImage.name != "page11") continue;
             if (_suppressedWhileTracked) continue; // backed out; wait for a fresh acquisition
             if (!TryBeginFeature()) continue;
 
@@ -89,7 +89,7 @@ public class Page11ARTracker : MonoBehaviour
 
         foreach (ARTrackedImage image in args.updated)
         {
-            if (image.referenceImage.name != "page11Placeholder") continue;
+            if (image.referenceImage.name != "page11") continue;
 
             // Re-arm as soon as the image stops being solidly tracked. XR Simulation / ARCore
             // usually report Limited (not None) on look-away, so keying only off None left the
@@ -118,7 +118,7 @@ public class Page11ARTracker : MonoBehaviour
 
         foreach (var removed in args.removed)
         {
-            if (removed.Value.referenceImage.name != "page11Placeholder") continue;
+            if (removed.Value.referenceImage.name != "page11") continue;
 
             _suppressedWhileTracked = false; // image left view → re-arm so looking back replays
             if (_activeTrackedImage == removed.Value)

@@ -3,7 +3,7 @@ using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
 /// <summary>
-/// Handles AR tracking for Page 10, managing UI visibility based on the page10Placeholder target.
+/// Handles AR tracking for Page 10, managing UI visibility based on the page10 target.
 /// </summary>
 public class Page10ARTracker : MonoBehaviour
 {
@@ -77,7 +77,7 @@ public class Page10ARTracker : MonoBehaviour
     {
         foreach (ARTrackedImage image in args.added)
         {
-            if (image.referenceImage.name != "page10Placeholder") continue;
+            if (image.referenceImage.name != "page10") continue;
             if (_suppressedWhileTracked) continue; // backed out; wait for a fresh acquisition
             if (!TryBeginFeature()) continue;
 
@@ -88,7 +88,7 @@ public class Page10ARTracker : MonoBehaviour
 
         foreach (ARTrackedImage image in args.updated)
         {
-            if (image.referenceImage.name != "page10Placeholder") continue;
+            if (image.referenceImage.name != "page10") continue;
 
             // Re-arm as soon as the image stops being solidly tracked. XR Simulation / ARCore
             // usually report Limited (not None) on look-away, so keying only off None left the
@@ -117,7 +117,7 @@ public class Page10ARTracker : MonoBehaviour
 
         foreach (var removed in args.removed)
         {
-            if (removed.Value.referenceImage.name != "page10Placeholder") continue;
+            if (removed.Value.referenceImage.name != "page10") continue;
 
             _suppressedWhileTracked = false; // image left view → re-arm so looking back replays
             if (_activeTrackedImage == removed.Value)

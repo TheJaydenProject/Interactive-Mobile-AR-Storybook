@@ -1,6 +1,7 @@
 using System.Collections;
 using TMPro;
 using UnityEngine;
+using UnityEngine.XR.ARFoundation;
 
 public class MenuManager : MonoBehaviour
 {
@@ -11,7 +12,17 @@ public class MenuManager : MonoBehaviour
     [SerializeField] private GameObject _permissionDeniedGroup;
     [SerializeField] private TMP_Text   _permissionDeniedMessage;
 
+    [Header("AR Scanning")]
+    [Tooltip("Disabled at Awake so pages can't be scanned behind the menu; re-enabled once Start is pressed and permissions are granted.")]
+    [SerializeField] private ARSession _arSession;
+
     private bool _isRequestingPermissions;
+
+    private void Awake()
+    {
+        if (_arSession != null) _arSession.enabled = false;
+        else Debug.LogError("[MenuManager] _arSession not assigned; AR scanning will not be gated behind Start.");
+    }
 
     public void OnStartPressed()
     {
@@ -52,7 +63,8 @@ public class MenuManager : MonoBehaviour
         // backs out of the scanner) without reloading the scene or re-instantiating UI.
         _menuUIGroup.SetActive(false);
 
-        // TODO: load/enable the camera scanner scene once it exists.
+        if (_arSession != null) _arSession.enabled = true;
+        else Debug.LogError("[MenuManager] _arSession not assigned; cannot enable AR scanning.");
     }
 
     private void ShowPermissionDenied(bool cameraGranted, bool micGranted)

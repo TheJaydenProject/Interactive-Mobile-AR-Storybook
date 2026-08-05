@@ -18,6 +18,10 @@ public class DropSpawner : MonoBehaviour
     [SerializeField] private float _spawnInterval = 1.5f;
     [SerializeField] private float _horizontalPadding = 60f;    // Keeps drops away from screen edges
     [SerializeField] private bool _autoStart = true;
+    [Tooltip("Multiplier added per drop starting from the 3rd drop (the first two stay at the prefab's base pace), ramping up until _maxFallSpeedMultiplier is reached.")]
+    [SerializeField] private float _fallSpeedRampStep = 0.05f;
+    [Tooltip("Fall speed multiplier cap — once the ramp reaches this, every later drop holds steady here.")]
+    [SerializeField] private float _maxFallSpeedMultiplier = 1.2f;
 
     private const float MinSpawnSeparation = 150f;
     private const int   MaxRollAttempts    = 5;
@@ -25,6 +29,7 @@ public class DropSpawner : MonoBehaviour
     private Coroutine _spawnRoutine;
     private float     _lastSpawnX = float.MinValue;
     private bool      _complete;
+    private int       _dropsSpawnedCount;
 
     private void Start()
     {
@@ -37,6 +42,7 @@ public class DropSpawner : MonoBehaviour
     {
         if (_complete) return;          // Completion fired — never restart
         if (_spawnRoutine != null) return;
+        _dropsSpawnedCount = 0;
         _spawnRoutine = StartCoroutine(SpawnLoop());
     }
 
@@ -95,9 +101,20 @@ public class DropSpawner : MonoBehaviour
         dropRect.anchoredPosition = new Vector2(spawnX, spawnY);
 
         if (dropObj.TryGetComponent(out DropBehaviour behaviour))
+        {
             behaviour.Initialize(_catchZone, _dropMeter);
+
+            _dropsSpawnedCount++;
+            if (_dropsSpawnedCount > 2)
+            {
+                float multiplier = 1f + (_dropsSpawnedCount - 2) * _fallSpeedRampStep;
+                behaviour.SetFallSpeedMultiplier(Mathf.Min(multiplier, _maxFallSpeedMultiplier));
+            }
+        }
         else
+        {
             Debug.LogWarning("[DropSpawner] BlueDrop prefab is missing a DropBehaviour component.", this);
+        }
     }
 
     private void ValidateReferences()

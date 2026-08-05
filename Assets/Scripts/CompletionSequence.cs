@@ -10,6 +10,8 @@ public class CompletionSequence : MonoBehaviour
     [SerializeField] private float  _fadeInDuration    = 1.5f;
     [SerializeField] private float  _holdDuration      = 1.0f;
     [SerializeField] private float  _fadeOutDuration   = 1.5f;
+    [Tooltip("Delay after the overlay finishes fading out before IsFullyCompleted flips true.")]
+    [SerializeField] private float  _completionUnlockDelay = 0.5f;
 
     [Header("Audio")]
     [SerializeField] private AudioSource _voiceAudioSource;
@@ -26,6 +28,12 @@ public class CompletionSequence : MonoBehaviour
     [SerializeField] private AppStateManager _appStateManager;
 
     private bool _triggered;
+    private bool _fullyCompleted;
+
+    // True once the whole completion routine (including the post-overlay unlock delay) has
+    // played out. Page4ARTracker checks this on the next scan to decide whether to replay the
+    // drop game or spawn the island reward instead.
+    public bool IsFullyCompleted => _fullyCompleted;
 
     private void Awake()
     {
@@ -72,6 +80,9 @@ public class CompletionSequence : MonoBehaviour
 
         Debug.Log("[CompletionSequence] Step 6 — fading out overlay");
         yield return StartCoroutine(FadeOutOverlay());
+
+        yield return new WaitForSeconds(_completionUnlockDelay);
+        _fullyCompleted = true;
 
         Debug.Log("[CompletionSequence] Step 7 — cleanup");
         NotifyPendantManager();

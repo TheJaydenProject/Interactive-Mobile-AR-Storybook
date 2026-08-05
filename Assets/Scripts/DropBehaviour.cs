@@ -23,6 +23,15 @@ public class DropBehaviour : MonoBehaviour
     }
 
     /// <summary>
+    /// Called by DropSpawner to scale this drop's fall speed (e.g. so drops after the first
+    /// one fall a little faster than the prefab's base pace).
+    /// </summary>
+    public void SetFallSpeedMultiplier(float multiplier)
+    {
+        _fallSpeed *= multiplier;
+    }
+
+    /// <summary>
     /// Called by DropSpawner immediately after instantiation to wire up dependencies.
     /// </summary>
     public void Initialize(CatchZoneController catchZone, DropMeterController dropMeter)

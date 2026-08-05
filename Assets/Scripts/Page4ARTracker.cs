@@ -1,4 +1,7 @@
+using System.Collections;
+using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
@@ -17,6 +20,27 @@ public class Page4ARTracker : MonoBehaviour
     [SerializeField] private DropSpawner         _dropSpawner;
     [SerializeField] private Image               _catchZoneImage;
     [SerializeField] private DropMeterController _dropMeterController;
+    [Tooltip("Checked on scan: once IsFullyCompleted is true, a scan spawns the island reward instead of replaying the drop game.")]
+    [SerializeField] private CompletionSequence  _completionSequence;
+
+    [Header("Island")]
+    [SerializeField] private GameObject _islandPrefab;
+    [SerializeField] private float _islandXOffset = 0.0f;
+    [SerializeField] private float _islandYOffset = 0.1f;
+    [SerializeField] private float _islandZOffset = 0.0f;
+    [SerializeField] private float _islandSpawnDelay = 5.0f;
+    [SerializeField] private float _islandScale = 1.0f;
+    [SerializeField] private Vector3 _islandRotation = Vector3.zero;
+    [SerializeField] private float _islandFadeOutDelay = 2.0f;
+    [SerializeField] private float _islandFadeOutDuration = 1.0f;
+
+    [Header("Pre-Game Sequence")]
+    [Tooltip("Shown first on scan. Needs a Graphic (e.g. Image) with Raycast Target on, under a Canvas with a GraphicRaycaster, so tap-anywhere dismissal works.")]
+    [SerializeField] private GameObject _instructionPrompt;
+    [Tooltip("Parent group holding the countdown text, if it's inactive by default and needs to be shown/hidden alongside the text itself.")]
+    [SerializeField] private GameObject _countdownGroup;
+    [SerializeField] private TMP_Text   _countdownText;
+    [SerializeField] private float      _countdownStepDuration = 1f;
 
     [Header("Scan Lock")]
     [SerializeField] private AppStateManager _appStateManager;
@@ -30,12 +54,31 @@ public class Page4ARTracker : MonoBehaviour
     // stays in view, cleared once the image leaves tracking so looking back re-arms it.
     private bool _suppressedWhileTracked;
 
+    private Coroutine _countdownCoroutine;
+
+    private GameObject _islandInstance;
+    private Coroutine  _islandFadeOutCoroutine;
+
     private void Awake()
     {
         if (_trackedImageManager == null)
             _trackedImageManager = GetComponent<ARTrackedImageManager>();
 
         HideUI();
+
+        if (_instructionPrompt != null)
+        {
+            _instructionPrompt.SetActive(false);
+            PromptTapHandler tapHandler = _instructionPrompt.AddComponent<PromptTapHandler>();
+            tapHandler.OnTap = HideInstructionPrompt;
+        }
+        else
+        {
+            Debug.LogError("[Page4ARTracker] _instructionPrompt not assigned.");
+        }
+
+        if (_countdownGroup != null) _countdownGroup.SetActive(false);
+        if (_countdownText != null) _countdownText.gameObject.SetActive(false);
     }
 
     private void OnEnable()
@@ -64,18 +107,19 @@ public class Page4ARTracker : MonoBehaviour
     {
         foreach (ARTrackedImage image in args.added)
         {
-            if (image.referenceImage.name != "page4Placeholder") continue;
+            if (image.referenceImage.name != "page4") continue;
             if (_suppressedWhileTracked) continue; // backed out; wait for a fresh acquisition
             if (!TryBeginFeature()) continue;
 
-            ShowUI();
-            if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
-            else _dropSpawner.StartSpawning();
+            if (_completionSequence != null && _completionSequence.IsFullyCompleted)
+                BeginIslandReward(image.transform);
+            else
+                BeginPreGameSequence();
         }
 
         foreach (ARTrackedImage image in args.updated)
         {
-            if (image.referenceImage.name != "page4Placeholder") continue;
+            if (image.referenceImage.name != "page4") continue;
 
             // Re-arm as soon as the image stops being solidly tracked. XR Simulation / ARCore
             // usually report Limited (not None) on look-away, so keying only off None left the
@@ -90,12 +134,15 @@ public class Page4ARTracker : MonoBehaviour
                 if (_suppressedWhileTracked) continue; // backed out; wait for a fresh acquisition
                 if (!TryBeginFeature()) continue;
 
-                ShowUI();
-                if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
-                else _dropSpawner.StartSpawning();
+                if (_completionSequence != null && _completionSequence.IsFullyCompleted)
+                    BeginIslandReward(image.transform);
+                else
+                    BeginPreGameSequence();
             }
             else if (image.trackingState == TrackingState.None)
             {
+                CancelPreGameSequence();
+                CancelIslandReward();
                 HideUI();
                 if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
                 else _dropSpawner.StopSpawning();
@@ -104,12 +151,168 @@ public class Page4ARTracker : MonoBehaviour
 
         foreach (var removed in args.removed)
         {
-            if (removed.Value.referenceImage.name != "page4Placeholder") continue;
+            if (removed.Value.referenceImage.name != "page4") continue;
             _suppressedWhileTracked = false; // image left view → re-arm so looking back replays
+            CancelPreGameSequence();
+            CancelIslandReward();
             HideUI();
             if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
             else _dropSpawner.StopSpawning();
         }
+    }
+
+    // Entry point once this page claims the shared lock: show the instructions first, then
+    // (once dismissed) the countdown, and only then the actual catch-zone/meter/drops.
+    private void BeginPreGameSequence()
+    {
+        if (_instructionPrompt == null)
+        {
+            Debug.LogError("[Page4ARTracker] _instructionPrompt is NULL — skipping straight to countdown.");
+            StartCountdown();
+            return;
+        }
+
+        _instructionPrompt.SetActive(true);
+    }
+
+    // Public so it can also be wired to a Button's OnClick() in the Inspector (same pattern as
+    // Page1Manager.HideFinishGroup), in addition to the runtime tap-anywhere handler below.
+    public void HideInstructionPrompt()
+    {
+        if (_instructionPrompt != null) _instructionPrompt.SetActive(false);
+        StartCountdown();
+    }
+
+    private void StartCountdown()
+    {
+        _countdownCoroutine = StartCoroutine(CountdownThenStart());
+    }
+
+    private IEnumerator CountdownThenStart()
+    {
+        if (_countdownGroup != null) _countdownGroup.SetActive(true);
+        if (_countdownText != null) _countdownText.gameObject.SetActive(true);
+
+        for (int i = 3; i >= 1; i--)
+        {
+            if (_countdownText != null) _countdownText.text = i.ToString();
+            yield return new WaitForSeconds(_countdownStepDuration);
+        }
+
+        if (_countdownText != null) _countdownText.text = "Go!";
+        yield return new WaitForSeconds(_countdownStepDuration);
+
+        if (_countdownGroup != null) _countdownGroup.SetActive(false);
+        if (_countdownText != null) _countdownText.gameObject.SetActive(false);
+        _countdownCoroutine = null;
+
+        ShowUI();
+        if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
+        else _dropSpawner.StartSpawning();
+    }
+
+    // Stops/hides whatever part of the instructions-or-countdown is currently showing.
+    // Called on Back cancellation and on tracking loss so nothing is left stuck on screen.
+    private void CancelPreGameSequence()
+    {
+        if (_countdownCoroutine != null)
+        {
+            StopCoroutine(_countdownCoroutine);
+            _countdownCoroutine = null;
+        }
+
+        if (_instructionPrompt != null) _instructionPrompt.SetActive(false);
+        if (_countdownGroup != null) _countdownGroup.SetActive(false);
+        if (_countdownText != null) _countdownText.gameObject.SetActive(false);
+    }
+
+    // Reward for scanning page4 again after the drop game has already been fully completed once
+    // this session. Mirrors Page1Manager's island spawn, minus the clouds/overlay/finish group.
+    // The island spawns and stays, and the feature stays "active" (Back button visible, other
+    // pages locked out) the whole time it's up — nothing despawns it or releases the lock yet.
+    // FadeOutIslandThenDestroy() below is ready to go once the actual removal condition is
+    // implemented; call it (via _islandFadeOutCoroutine = StartCoroutine(FadeOutIslandThenDestroy());)
+    // from wherever that condition fires — it already calls EndFeature() once the fade finishes.
+    private void BeginIslandReward(Transform anchor)
+    {
+        SpawnIsland(anchor);
+    }
+
+    private void SpawnIsland(Transform anchor)
+    {
+        DespawnIsland();
+
+        if (_islandPrefab == null)
+        {
+            Debug.LogError("[Page4ARTracker] _islandPrefab not assigned.");
+            return;
+        }
+
+        Vector3 position = anchor.position + new Vector3(_islandXOffset, _islandYOffset, _islandZOffset);
+        _islandInstance = Instantiate(_islandPrefab, position, Quaternion.Euler(_islandRotation), anchor);
+        _islandInstance.transform.localScale *= _islandScale;
+    }
+
+    private IEnumerator FadeOutIslandThenDestroy()
+    {
+        yield return new WaitForSeconds(_islandFadeOutDelay);
+
+        if (_islandInstance != null)
+        {
+            // Shrinking localScale alone collapses toward the prefab's own pivot, which isn't
+            // necessarily centered on its geometry — so instead pull position toward the combined
+            // renderer bounds' center at the same rate the scale shrinks, same as Page1Manager.
+            Renderer[] renderers = _islandInstance.GetComponentsInChildren<Renderer>();
+            Vector3 centerPoint = _islandInstance.transform.position;
+            if (renderers.Length > 0)
+            {
+                Bounds combinedBounds = renderers[0].bounds;
+                for (int i = 1; i < renderers.Length; i++)
+                    combinedBounds.Encapsulate(renderers[i].bounds);
+                centerPoint = combinedBounds.center;
+            }
+
+            Vector3 startScale = _islandInstance.transform.localScale;
+            Vector3 startPosition = _islandInstance.transform.position;
+            float elapsed = 0f;
+
+            while (elapsed < _islandFadeOutDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / _islandFadeOutDuration);
+                float scaleFactor = 1f - t;
+
+                _islandInstance.transform.localScale = startScale * scaleFactor;
+                _islandInstance.transform.position = Vector3.Lerp(centerPoint, startPosition, scaleFactor);
+                yield return null;
+            }
+        }
+
+        DespawnIsland();
+        _islandFadeOutCoroutine = null;
+
+        // Reward has fully played out — release the shared lock so scanning resumes.
+        EndFeature();
+    }
+
+    private void DespawnIsland()
+    {
+        if (_islandInstance != null)
+            Destroy(_islandInstance);
+        _islandInstance = null;
+    }
+
+    // Stops the island reward wherever it's at and removes the island immediately. Called on
+    // Back cancellation and on tracking loss so nothing is left mid-air or mid-fade.
+    private void CancelIslandReward()
+    {
+        if (_islandFadeOutCoroutine != null)
+        {
+            StopCoroutine(_islandFadeOutCoroutine);
+            _islandFadeOutCoroutine = null;
+        }
+
+        DespawnIsland();
     }
 
     private void ShowUI()
@@ -146,6 +349,9 @@ public class Page4ARTracker : MonoBehaviour
     private void HandleFeatureCancelled()
     {
         if (!_isActive) return;
+
+        CancelPreGameSequence();
+        CancelIslandReward();
 
         if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
         else _dropSpawner.StopSpawning();
@@ -184,5 +390,14 @@ public class Page4ARTracker : MonoBehaviour
 
         if (_dropMeterController == null) Debug.LogError("[Page4ARTracker] _dropMeterController is NULL");
         else _dropMeterController.SetVisible(false);
+    }
+
+    // Runtime-attached to _instructionPrompt so any tap on it dismisses it, without requiring
+    // a Button to be set up in the Inspector (same trick Page8ShadowController uses for its
+    // shadow's press-and-hold).
+    private class PromptTapHandler : MonoBehaviour, IPointerClickHandler
+    {
+        public System.Action OnTap;
+        public void OnPointerClick(PointerEventData eventData) => OnTap?.Invoke();
     }
 }

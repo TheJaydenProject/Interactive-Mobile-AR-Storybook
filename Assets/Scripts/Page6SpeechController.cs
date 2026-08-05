@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
@@ -10,13 +11,30 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 {
     [Header("AR")]
     [SerializeField] private ARTrackedImageManager _trackedImageManager;
-    [SerializeField] private string _imageTargetName = "page6Placeholder";
+    [SerializeField] private string _imageTargetName = "page6";
 
     [Header("Words")]
     [SerializeField] private GameObject _page6WordsParent;
     [SerializeField] private GameObject _textBackgroundOverlay;
     [SerializeField] private float      _wordsFadeInDuration = 0.5f;
     [SerializeField] private TMP_Text[] _wordLabels;
+
+    [Header("Island")]
+    [SerializeField] private GameObject _islandPrefab;
+    [SerializeField] private float _islandXOffset = 0.0f;
+    [SerializeField] private float _islandYOffset = 0.1f;
+    [SerializeField] private float _islandZOffset = 0.0f;
+    [SerializeField] private float _islandSpawnDelay = 5.0f;
+    [SerializeField] private float _islandScale = 1.0f;
+    [SerializeField] private Vector3 _islandRotation = Vector3.zero;
+    [SerializeField] private float _islandFadeOutDelay = 2.0f;
+    [SerializeField] private float _islandFadeOutDuration = 1.0f;
+
+    [Header("Instructions")]
+    [Tooltip("Shown after the island spawn delay. Needs a Graphic (e.g. Image) with Raycast Target on, under a Canvas with a GraphicRaycaster, so tap-anywhere dismissal works.")]
+    [SerializeField] private GameObject _instructionPrompt;
+    [Tooltip("Delay after the prompt is dismissed before the words/mic listening actually starts.")]
+    [SerializeField] private float _postPromptDelay = 1f;
 
     [Header("Completion")]
     [SerializeField] private Page6CompletionSequence _completionSequence;
@@ -34,10 +52,19 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     };
 
     private int       _nextWordIndex;
+    // _nextWordIndex at the moment the current SpeechToText session started. Each session's
+    // transcript starts empty — it never contains words confirmed in an earlier session — so
+    // CheckWords must only replay words confirmed since this point, not since word 0.
+    private int       _sessionStartWordIndex;
     private bool      _isListening;
     private bool      _completionTriggered;
     private Coroutine _restartCoroutine;
     private Coroutine _fadeInCoroutine;
+
+    private GameObject _islandInstance;
+    private Coroutine  _islandIntroCoroutine;
+    private Coroutine  _islandFadeOutCoroutine;
+    private Coroutine  _postPromptCoroutine;
 
     // Mirrors "do I currently hold the shared AppStateManager lock" for the cancel guard.
     // Self-heals via HandleFeatureActiveChanged so a stale true can never linger past this
@@ -47,6 +74,20 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     // Set when the child backs out via Back; blocks this page re-triggering while its image
     // stays in view, cleared once the image leaves tracking so looking back re-arms it.
     private bool _suppressedWhileTracked;
+
+    private void Awake()
+    {
+        if (_instructionPrompt != null)
+        {
+            _instructionPrompt.SetActive(false);
+            PromptTapHandler tapHandler = _instructionPrompt.AddComponent<PromptTapHandler>();
+            tapHandler.OnTap = HideInstructionPrompt;
+        }
+        else
+        {
+            Debug.LogError("[Page6SpeechController] _instructionPrompt not assigned.");
+        }
+    }
 
     private void Start()
     {
@@ -87,7 +128,7 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         foreach (ARTrackedImage image in args.added)
         {
             if (image.referenceImage.name != _imageTargetName) continue;
-            StartListening();
+            StartListening(image.transform);
         }
 
         foreach (ARTrackedImage image in args.updated)
@@ -104,9 +145,9 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 
             if (image.trackingState == TrackingState.Tracking)
             {
-                if (!_isListening) StartListening();
+                if (!IsFeatureInProgress) StartListening(image.transform);
             }
-            else if (image.trackingState == TrackingState.None && _isListening)
+            else if (image.trackingState == TrackingState.None && IsFeatureInProgress)
             {
                 StopListening();
             }
@@ -120,7 +161,19 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         }
     }
 
-    public void StartListening()
+    // True while any stage of the intro-through-listening sequence is in progress, so the
+    // tracking-update loop doesn't re-trigger a new pass over an already-running one.
+    private bool IsFeatureInProgress =>
+        _islandIntroCoroutine != null
+        || (_instructionPrompt != null && _instructionPrompt.activeSelf)
+        || _postPromptCoroutine != null
+        || _isListening;
+
+    // Entry point once this page claims the shared lock: spawn the island, wait, show the
+    // instructions, and only after those are dismissed (plus a short buffer) does the words/mic
+    // listening sequence actually start — mirrors Page1Manager/Page4ARTracker's island + prompt
+    // intro, minus any clouds/overlay/countdown.
+    public void StartListening(Transform anchor)
     {
         if (_completionTriggered) return;
         // Backed out of this page but still pointed at it — stay quiet until it's re-acquired.
@@ -129,9 +182,113 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         // page's own completion releases the shared lock.
         if (!TryBeginFeature()) return;
 
+        _islandIntroCoroutine = StartCoroutine(SpawnIslandThenShowInstructions(anchor));
+    }
+
+    private IEnumerator SpawnIslandThenShowInstructions(Transform anchor)
+    {
+        SpawnIsland(anchor);
+        yield return new WaitForSeconds(_islandSpawnDelay);
+
+        _islandIntroCoroutine = null;
+        ShowInstructionPrompt();
+    }
+
+    private void ShowInstructionPrompt()
+    {
+        if (_instructionPrompt == null)
+        {
+            Debug.LogError("[Page6SpeechController] _instructionPrompt is NULL — skipping straight to listening.");
+            BeginListening();
+            return;
+        }
+
+        _instructionPrompt.SetActive(true);
+    }
+
+    // Public so it can also be wired to a Button's OnClick() in the Inspector (same pattern as
+    // Page4ARTracker.HideInstructionPrompt), in addition to the runtime tap-anywhere handler below.
+    public void HideInstructionPrompt()
+    {
+        if (_instructionPrompt != null) _instructionPrompt.SetActive(false);
+        _postPromptCoroutine = StartCoroutine(BeginListeningAfterDelay());
+    }
+
+    private IEnumerator BeginListeningAfterDelay()
+    {
+        yield return new WaitForSeconds(_postPromptDelay);
+        _postPromptCoroutine = null;
+        BeginListening();
+    }
+
+    private void BeginListening()
+    {
         _fadeInCoroutine = StartCoroutine(FadeInWords());
         _isListening = true;
         SpeechToText.RequestPermissionAsync(( permission ) => OnPermissionResult(permission));
+    }
+
+    private void SpawnIsland(Transform anchor)
+    {
+        DespawnIsland();
+
+        if (_islandPrefab == null)
+        {
+            Debug.LogError("[Page6SpeechController] _islandPrefab not assigned.");
+            return;
+        }
+
+        Vector3 position = anchor.position + new Vector3(_islandXOffset, _islandYOffset, _islandZOffset);
+        _islandInstance = Instantiate(_islandPrefab, position, Quaternion.Euler(_islandRotation), anchor);
+        _islandInstance.transform.localScale *= _islandScale;
+    }
+
+    private void DespawnIsland()
+    {
+        if (_islandInstance != null)
+            Destroy(_islandInstance);
+        _islandInstance = null;
+    }
+
+    // Not called anywhere yet — nothing shrinks/removes the island automatically for now (same
+    // as Page4ARTracker's island reward). Ready to wire up once a removal condition exists: call
+    // it via _islandFadeOutCoroutine = StartCoroutine(FadeOutIslandThenDestroy()); from wherever
+    // that condition fires.
+    private IEnumerator FadeOutIslandThenDestroy()
+    {
+        yield return new WaitForSeconds(_islandFadeOutDelay);
+
+        if (_islandInstance != null)
+        {
+            Renderer[] renderers = _islandInstance.GetComponentsInChildren<Renderer>();
+            Vector3 centerPoint = _islandInstance.transform.position;
+            if (renderers.Length > 0)
+            {
+                Bounds combinedBounds = renderers[0].bounds;
+                for (int i = 1; i < renderers.Length; i++)
+                    combinedBounds.Encapsulate(renderers[i].bounds);
+                centerPoint = combinedBounds.center;
+            }
+
+            Vector3 startScale = _islandInstance.transform.localScale;
+            Vector3 startPosition = _islandInstance.transform.position;
+            float elapsed = 0f;
+
+            while (elapsed < _islandFadeOutDuration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / _islandFadeOutDuration);
+                float scaleFactor = 1f - t;
+
+                _islandInstance.transform.localScale = startScale * scaleFactor;
+                _islandInstance.transform.position = Vector3.Lerp(centerPoint, startPosition, scaleFactor);
+                yield return null;
+            }
+        }
+
+        DespawnIsland();
+        _islandFadeOutCoroutine = null;
+        EndFeature();
     }
 
     private bool TryBeginFeature()
@@ -175,6 +332,24 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 
     public void StopListening()
     {
+        if (_islandIntroCoroutine != null)
+        {
+            StopCoroutine(_islandIntroCoroutine);
+            _islandIntroCoroutine = null;
+        }
+        if (_postPromptCoroutine != null)
+        {
+            StopCoroutine(_postPromptCoroutine);
+            _postPromptCoroutine = null;
+        }
+        if (_islandFadeOutCoroutine != null)
+        {
+            StopCoroutine(_islandFadeOutCoroutine);
+            _islandFadeOutCoroutine = null;
+        }
+        if (_instructionPrompt != null) _instructionPrompt.SetActive(false);
+        DespawnIsland();
+
         _isListening = false;
         if (_restartCoroutine != null)
         {
@@ -199,6 +374,8 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
             return;
         }
         if (!_isListening) return;
+
+        _sessionStartWordIndex = _nextWordIndex;
         if (!SpeechToText.Start(this))
             Debug.LogWarning("[Page6SpeechController] Speech recognition session could not be started.");
     }
@@ -224,7 +401,7 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         CheckWords(spokenText);
 
         if (!_completionTriggered && _isListening)
-            _restartCoroutine = StartCoroutine(RestartAfterDelay());
+            _restartCoroutine = StartCoroutine(RestartAssoonAsReady());
     }
 
     // --- Word detection ---
@@ -237,9 +414,11 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         string lower = transcript.ToLowerInvariant();
         int searchPos = 0;
 
-        // Replay already-confirmed words to establish the correct character offset,
-        // so duplicate words like "and" are matched at the right position in sequence.
-        for (int i = 0; i < _nextWordIndex; i++)
+        // Replay words confirmed *during this session* to establish the correct character
+        // offset, so duplicate words like "and" are matched at the right position in sequence.
+        // Words confirmed in an earlier session aren't in this session's transcript at all, so
+        // only replay from where this session started, not from word 0.
+        for (int i = _sessionStartWordIndex; i < _nextWordIndex; i++)
         {
             int pos = FindWord(lower, TargetWords[i], searchPos);
             if (pos < 0) return; // transcript no longer contains expected chain; wait for next partial
@@ -291,11 +470,23 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
             Debug.LogWarning("[Page6SpeechController] _completionSequence not assigned.");
     }
 
-    private IEnumerator RestartAfterDelay()
+    private IEnumerator RestartAssoonAsReady()
     {
-        yield return new WaitForSeconds(0.5f);
-        if (_isListening && !_completionTriggered)
-            SpeechToText.RequestPermissionAsync(( permission ) => OnPermissionResult(permission));
+        // Wait only as long as the native side needs to actually finish tearing down the
+        // previous session, instead of a flat delay — shrinks the "nothing is listening" gap
+        // between sessions as much as possible, so a mid-phrase pause is less likely to swallow
+        // a word entirely.
+        while (SpeechToText.IsBusy())
+            yield return null;
+
+        if (!_isListening || _completionTriggered) yield break;
+
+        // Permission was already granted for this StartListening() call and doesn't change
+        // mid-session — skipping the RequestPermissionAsync round-trip on restart shaves more
+        // off the gap.
+        _sessionStartWordIndex = _nextWordIndex;
+        if (!SpeechToText.Start(this))
+            Debug.LogWarning("[Page6SpeechController] Speech recognition session could not be restarted.");
     }
 
     // --- Visuals ---
@@ -354,5 +545,13 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         if (_wordLabels == null || index >= _wordLabels.Length) return;
         if (_wordLabels[index] != null)
             _wordLabels[index].color = LitColor;
+    }
+
+    // Runtime-attached to _instructionPrompt so any tap on it dismisses it, without requiring
+    // a Button to be set up in the Inspector (same trick Page4ARTracker uses for its prompt).
+    private class PromptTapHandler : MonoBehaviour, IPointerClickHandler
+    {
+        public System.Action OnTap;
+        public void OnPointerClick(PointerEventData eventData) => OnTap?.Invoke();
     }
 }

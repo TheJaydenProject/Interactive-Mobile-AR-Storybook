@@ -34,6 +34,7 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private Image _greyOverlay;
     [SerializeField] private float _fadeInDuration = 1.0f;
     [SerializeField] private float _popFadeDuration = 0.3f;
+    [SerializeField] private float _overlayDecayCurve = 2.0f;
     [SerializeField] private AudioSource _overlayFadeInAudioSource;
     [SerializeField] private AudioClip _overlayFadeInClip;
     [SerializeField] private float _overlayFadeInSfxLeadTime = 1.0f;
@@ -507,10 +508,14 @@ public class Page1Manager : MonoBehaviour
 
         PlayCloudPopSfx();
 
-        // Step the overlay down with each pop. Goes to zero only on the last one.
+        // Step the overlay down with each pop. Eased so it stays dark through the early/mid
+        // pops and only drops toward the floor near the end, leaving a real "reveal" for the
+        // last pop instead of the overlay already being mostly gone by then. Goes to zero only
+        // on the last one.
+        float t = Mathf.Pow((float)_poppedCount / (_cloudCount - 1), _overlayDecayCurve);
         float targetAlpha = _poppedCount >= _cloudCount
             ? 0f
-            : Mathf.Lerp(OverlayMaxAlpha, OverlayMinAlpha, (float)_poppedCount / (_cloudCount - 1));
+            : Mathf.Lerp(OverlayMaxAlpha, OverlayMinAlpha, t);
 
         FadeTo(targetAlpha, _popFadeDuration);
 

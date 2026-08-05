@@ -15,6 +15,9 @@ public class DropMeterController : MonoBehaviour
     [Header("Audio")]
     [SerializeField] private AudioSource _catchAudioSource;
     [SerializeField] private AudioClip   _catchSoundClip;
+    [Tooltip("Per-catch pitch randomization so the SFX doesn't sound identical every time.")]
+    [SerializeField] private float _catchPitchMin = 0.8f;
+    [SerializeField] private float _catchPitchMax = 1.2f;
 
     [Header("Dependencies")]
     [SerializeField] private CompletionSequence _completionSequence;
@@ -114,7 +117,9 @@ public class DropMeterController : MonoBehaviour
 
     private void PlayCatchSound()
     {
-        if (_catchAudioSource != null && _catchSoundClip != null)
-            _catchAudioSource.PlayOneShot(_catchSoundClip);
+        if (_catchAudioSource == null || _catchSoundClip == null) return;
+
+        _catchAudioSource.pitch = Random.Range(_catchPitchMin, _catchPitchMax);
+        _catchAudioSource.PlayOneShot(_catchSoundClip);
     }
 }

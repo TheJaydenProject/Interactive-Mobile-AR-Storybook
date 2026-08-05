@@ -12,7 +12,7 @@ public class Page8ShadowController : MonoBehaviour
     
     [Header("AR References")]
     [SerializeField] private ARTrackedImageManager _trackedImageManager;
-    [SerializeField] private string _targetImageName = "page8Placeholder";
+    [SerializeField] private string _targetImageName = "page8";
 
     [Header("Settings")]
     [SerializeField] private float _holdDuration = 3f;
