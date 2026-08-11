@@ -42,6 +42,10 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     [Header("Scan Lock")]
     [SerializeField] private AppStateManager _appStateManager;
 
+    [Header("Debug")]
+    [Tooltip("Editor/PC testing: skips the mic/speech-matching step entirely and completes the phrase immediately once reached, so everything after it (island, VFX, pendant, overlay) can be tested without a working mic.")]
+    [SerializeField] private bool _debugSkipSpeechRecognition;
+
     private static readonly Color LitColor   = new Color(1f,         68f / 255f, 0f, 1f); // #FF4400
     private static readonly Color UnlitColor = new Color(51f / 255f, 17f / 255f, 0f, 1f); // #331100
 
@@ -61,7 +65,8 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     private Coroutine _restartCoroutine;
     private Coroutine _fadeInCoroutine;
 
-    private GameObject _islandInstance;
+    private GameObject         _islandInstance;
+    private IslandVfxReference _islandVfxReference;
     private Coroutine  _islandIntroCoroutine;
     private Coroutine  _islandFadeOutCoroutine;
     private Coroutine  _postPromptCoroutine;
@@ -149,6 +154,7 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
             }
             else if (image.trackingState == TrackingState.None && IsFeatureInProgress)
             {
+                CancelIslandAndPrompt();
                 StopListening();
             }
         }
@@ -157,6 +163,7 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         {
             if (removed.Value.referenceImage.name != _imageTargetName) continue;
             _suppressedWhileTracked = false;
+            CancelIslandAndPrompt();
             StopListening();
         }
     }
@@ -223,6 +230,12 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 
     private void BeginListening()
     {
+        if (_debugSkipSpeechRecognition)
+        {
+            TriggerCompletion();
+            return;
+        }
+
         _fadeInCoroutine = StartCoroutine(FadeInWords());
         _isListening = true;
         SpeechToText.RequestPermissionAsync(( permission ) => OnPermissionResult(permission));
@@ -241,6 +254,20 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         Vector3 position = anchor.position + new Vector3(_islandXOffset, _islandYOffset, _islandZOffset);
         _islandInstance = Instantiate(_islandPrefab, position, Quaternion.Euler(_islandRotation), anchor);
         _islandInstance.transform.localScale *= _islandScale;
+
+        _islandVfxReference = _islandInstance.GetComponent<IslandVfxReference>();
+        if (_islandVfxReference == null)
+        {
+            Debug.LogWarning("[Page6SpeechController] _islandPrefab has no IslandVfxReference — Page6CompletionSequence's glow VFX won't play.");
+        }
+        else if (_islandVfxReference.GlowVfx != null)
+        {
+            // ParticleSystems default to "Play On Awake", so left alone this fires the instant
+            // the island is instantiated — stop it immediately so it stays silent until
+            // Page6CompletionSequence explicitly plays it later.
+            _islandVfxReference.GlowVfx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            _islandVfxReference.GlowVfx.gameObject.SetActive(false);
+        }
     }
 
     private void DespawnIsland()
@@ -248,12 +275,25 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         if (_islandInstance != null)
             Destroy(_islandInstance);
         _islandInstance = null;
+        _islandVfxReference = null;
     }
 
-    // Not called anywhere yet — nothing shrinks/removes the island automatically for now (same
-    // as Page4ARTracker's island reward). Ready to wire up once a removal condition exists: call
-    // it via _islandFadeOutCoroutine = StartCoroutine(FadeOutIslandThenDestroy()); from wherever
-    // that condition fires.
+    // Called by Page6CompletionSequence right before it needs to play the glow VFX — the VFX
+    // lives inside the island prefab itself, so it only exists once the island is spawned.
+    public ParticleSystem GetIslandGlowVfx()
+    {
+        return _islandVfxReference != null ? _islandVfxReference.GlowVfx : null;
+    }
+
+    // Called by Page6CompletionSequence once the spark reward sequence reaches its island-exit
+    // step. Fire-and-forget — the caller doesn't wait for the shrink to finish, matching
+    // Page1Manager's original exit (the lock releases immediately; the shrink plays out after).
+    public void BeginIslandShrink()
+    {
+        if (_islandFadeOutCoroutine != null) return;
+        _islandFadeOutCoroutine = StartCoroutine(FadeOutIslandThenDestroy());
+    }
+
     private IEnumerator FadeOutIslandThenDestroy()
     {
         yield return new WaitForSeconds(_islandFadeOutDelay);
@@ -288,7 +328,6 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 
         DespawnIsland();
         _islandFadeOutCoroutine = null;
-        EndFeature();
     }
 
     private bool TryBeginFeature()
@@ -314,7 +353,8 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     {
         if (!_isActive) return;
 
-        StopListening(); // no partial credit — TriggerCompletion() was never reached
+        CancelIslandAndPrompt(); // no partial credit — TriggerCompletion() was never reached
+        StopListening();
         _suppressedWhileTracked = true;
         _isActive = false;
         EndFeature();
@@ -330,7 +370,12 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         _appStateManager.EndFeature();
     }
 
-    public void StopListening()
+    // Cancels whichever pre-listening stage (island intro / instruction prompt / post-prompt
+    // wait) is in progress and removes the island immediately, plus stops an in-progress shrink.
+    // Only called on actual cancellation (Back button, tracking loss) — never on successful
+    // completion, since the island needs to survive through Page6CompletionSequence's reward
+    // sequence for its own shrink-and-destroy exit at the end.
+    private void CancelIslandAndPrompt()
     {
         if (_islandIntroCoroutine != null)
         {
@@ -349,7 +394,12 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         }
         if (_instructionPrompt != null) _instructionPrompt.SetActive(false);
         DespawnIsland();
+    }
 
+    // Stops mic listening and hides the words UI. Called both on successful completion and on
+    // cancellation — does NOT touch the island; see CancelIslandAndPrompt() for that.
+    public void StopListening()
+    {
         _isListening = false;
         if (_restartCoroutine != null)
         {

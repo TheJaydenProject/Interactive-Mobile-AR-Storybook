@@ -3,10 +3,26 @@ using System.Collections.Generic;
 
 public class PendantManager : MonoBehaviour
 {
+    public enum SparkColor { Blue, Red, Yellow, Gold }
+
     private bool _blueSparkCollected;
     private bool _redSparkCollected;
     private bool _yellowSparkCollected;
     private bool _goldSparkCollected;
+
+    // Generic entry point for page completion sequences that award a spark by color (e.g.
+    // Page6CompletionSequence's post-overlay reward sequence). Dispatches to the same
+    // Collect*Spark() methods below, so existing per-color callers keep working unchanged.
+    public void AwardSpark(SparkColor color)
+    {
+        switch (color)
+        {
+            case SparkColor.Blue:   CollectBlueSpark();   break;
+            case SparkColor.Red:    CollectRedSpark();    break;
+            case SparkColor.Yellow: CollectYellowSpark(); break;
+            case SparkColor.Gold:   CollectGoldSpark();   break;
+        }
+    }
 
     public void CollectBlueSpark()
     {

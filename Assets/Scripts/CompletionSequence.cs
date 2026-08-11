@@ -10,12 +10,27 @@ public class CompletionSequence : MonoBehaviour
     [SerializeField] private float  _fadeInDuration    = 1.5f;
     [SerializeField] private float  _holdDuration      = 1.0f;
     [SerializeField] private float  _fadeOutDuration   = 1.5f;
-    [Tooltip("Delay after the overlay finishes fading out before IsFullyCompleted flips true.")]
-    [SerializeField] private float  _completionUnlockDelay = 0.5f;
 
     [Header("Audio")]
     [SerializeField] private AudioSource _voiceAudioSource;
     [SerializeField] private AudioClip   _riverSpiritClip;
+
+    [Header("Spark Reward")]
+    [SerializeField] private Material               _pendantMaterial;
+    [SerializeField] private Color                  _sparkColor = new Color(0x33 / 255f, 0x99 / 255f, 0xFF / 255f); // #3399FF
+    [SerializeField] private PendantManager.SparkColor _sparkType = PendantManager.SparkColor.Blue;
+    [Tooltip("Wait after the completion overlay finishes fading out, before the glow VFX starts. The island itself was already spawned back at the start of the page (Page4ARTracker), not here.")]
+    [SerializeField] private float _vfxStartDelay = 2f;
+    [Tooltip("Wait after the glow VFX starts, before the audio line plays.")]
+    [SerializeField] private float _audioStartDelay = 1f;
+    [Tooltip("Wait after both the VFX and audio line have finished, before the island shrinks.")]
+    [SerializeField] private float _postRewardDelay = 1.5f;
+    [Tooltip("Fallback VFX duration used only if the island's glow VFX can't be found.")]
+    [SerializeField] private float _fallbackVfxDuration = 4f;
+
+    [Header("Island Exit")]
+    [Tooltip("Used to look up the already-spawned island's glow VFX (via IslandVfxReference) and to trigger its shrink at the end.")]
+    [SerializeField] private Page4ARTracker _arTracker;
 
     [Header("Scene References")]
     [SerializeField] private DropSpawner         _dropSpawner;
@@ -28,12 +43,8 @@ public class CompletionSequence : MonoBehaviour
     [SerializeField] private AppStateManager _appStateManager;
 
     private bool _triggered;
-    private bool _fullyCompleted;
 
-    // True once the whole completion routine (including the post-overlay unlock delay) has
-    // played out. Page4ARTracker checks this on the next scan to decide whether to replay the
-    // drop game or spawn the island reward instead.
-    public bool IsFullyCompleted => _fullyCompleted;
+    private static readonly int s_baseColorId = Shader.PropertyToID("_BaseColor");
 
     private void Awake()
     {
@@ -66,30 +77,98 @@ public class CompletionSequence : MonoBehaviour
         if (_dropMeterController == null) Debug.LogError("[CompletionSequence] _dropMeterController is NULL");
         yield return StartCoroutine(FadeOutUI());
 
+        // Must fire together — the pendant color and the spark recorded in PendantManager
+        // should never be out of sync. Happens right as the game ends, before the overlay plays.
+        SetPendantColor(_sparkColor);
+        if (_pendantManager != null)
+            _pendantManager.AwardSpark(_sparkType);
+        else
+            Debug.LogWarning("[CompletionSequence] _pendantManager not assigned — AwardSpark() not called.");
+
         Debug.Log("[CompletionSequence] Step 4 — fading in overlay");
         if (_completionOverlay == null) Debug.LogError("[CompletionSequence] _completionOverlay is NULL");
         yield return StartCoroutine(FadeInOverlay());
 
-        Debug.Log("[CompletionSequence] Step 5 — playing voice line");
-        PlayVoiceLine();
+        yield return new WaitForSeconds(_holdDuration);
 
-        if (_riverSpiritClip != null)
-            yield return new WaitForSeconds(_riverSpiritClip.length);
-        else
-            yield return new WaitForSeconds(_holdDuration);
-
-        Debug.Log("[CompletionSequence] Step 6 — fading out overlay");
+        Debug.Log("[CompletionSequence] Step 5 — fading out overlay");
         yield return StartCoroutine(FadeOutOverlay());
 
-        yield return new WaitForSeconds(_completionUnlockDelay);
-        _fullyCompleted = true;
+        yield return StartCoroutine(SparkRewardSequence());
+    }
 
-        Debug.Log("[CompletionSequence] Step 7 — cleanup");
-        NotifyPendantManager();
+    // Runs right after the overlay has fully faded back out: the Water Spirit stops crying,
+    // glow VFX (on the island that's already been sitting there since the page started), the
+    // river spirit's line, then the island exit and final cleanup.
+    private IEnumerator SparkRewardSequence()
+    {
+        Animator waterSpiritAnimator = _arTracker != null ? _arTracker.GetIslandWaterSpiritAnimator() : null;
+        if (waterSpiritAnimator != null)
+            waterSpiritAnimator.SetBool("complete", true);
+        else
+            Debug.LogWarning("[CompletionSequence] Island's Water Spirit Animator not found — is IslandVfxReference's Water Spirit Animator assigned, and _arTracker assigned?");
+
+        yield return new WaitForSeconds(_vfxStartDelay);
+
+        ParticleSystem glowVfx = _arTracker != null ? _arTracker.GetIslandGlowVfx() : null;
+
+        float vfxDuration = _fallbackVfxDuration;
+        if (glowVfx != null)
+        {
+            glowVfx.gameObject.SetActive(true);
+            glowVfx.Play(true); // withChildren — the VFX has several nested particle systems
+            vfxDuration = glowVfx.main.duration;
+        }
+        else
+        {
+            Debug.LogWarning("[CompletionSequence] Island's glow VFX not found — is IslandVfxReference on the island prefab, and _arTracker assigned?");
+        }
+
+        yield return new WaitForSeconds(_audioStartDelay);
+
+        PlayVoiceLine();
+        float audioLength = _riverSpiritClip != null ? _riverSpiritClip.length : 0f;
+
+        // Wait until both the VFX and the audio line have finished — whichever takes longer.
+        // The VFX has already been running for _audioStartDelay seconds at this point, so only
+        // the remainder of its duration (if any) still needs to be waited out here.
+        float remainingWait = Mathf.Max(vfxDuration - _audioStartDelay, audioLength);
+        yield return new WaitForSeconds(Mathf.Max(0f, remainingWait));
+
+        yield return new WaitForSeconds(_postRewardDelay);
+
+        // Kick off the island's shrink-and-destroy — fire-and-forget, doesn't block on it
+        // finishing (same exit timing as Page1Manager's original finish-group dismissal).
+        if (_arTracker != null)
+        {
+            _arTracker.BeginIslandShrink();
+            // Stops page4 from immediately re-triggering itself (and destroying the still-shrinking
+            // island) if the marker is still being tracked once the lock below releases.
+            _arTracker.MarkSequenceComplete();
+        }
+        else
+        {
+            Debug.LogWarning("[CompletionSequence] _arTracker not assigned — island shrink not triggered.");
+        }
+
+        if (glowVfx != null)
+            glowVfx.gameObject.SetActive(false);
+
         Cleanup();
 
-        // Transition has fully played out — release the shared lock so scanning resumes.
+        // Sequence has fully played out — release the shared lock so scanning resumes.
         EndFeature();
+    }
+
+    private void SetPendantColor(Color color)
+    {
+        if (_pendantMaterial == null)
+        {
+            Debug.LogWarning("[CompletionSequence] _pendantMaterial not assigned — pendant color not set.");
+            return;
+        }
+
+        _pendantMaterial.SetColor(s_baseColorId, color);
     }
 
     private IEnumerator FadeOutUI()
@@ -188,19 +267,9 @@ public class CompletionSequence : MonoBehaviour
         _appStateManager.EndFeature();
     }
 
-    private void NotifyPendantManager()
-    {
-        if (_pendantManager != null)
-            _pendantManager.CollectBlueSpark();
-        else
-            Debug.LogWarning("[CompletionSequence] _pendantManager is NULL — CollectBlueSpark() not called.");
-    }
-
     private void Cleanup()
     {
         if (_arCanvas == null) Debug.LogError("[CompletionSequence] _arCanvas is NULL");
         else _arCanvas.gameObject.SetActive(false);
-
-        gameObject.SetActive(false);
     }
 }

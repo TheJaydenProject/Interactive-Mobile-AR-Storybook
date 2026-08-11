@@ -35,6 +35,11 @@ public class SpeakerButton : MonoBehaviour
             return;
         }
 
-        _audioSource.PlayOneShot(_clip);
+        // Ignore spammed presses while the clip is still playing — only a fresh press after it
+        // finishes is allowed to replay it.
+        if (_audioSource.isPlaying) return;
+
+        _audioSource.clip = _clip;
+        _audioSource.Play();
     }
 }

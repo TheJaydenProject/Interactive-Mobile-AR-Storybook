@@ -20,8 +20,6 @@ public class Page4ARTracker : MonoBehaviour
     [SerializeField] private DropSpawner         _dropSpawner;
     [SerializeField] private Image               _catchZoneImage;
     [SerializeField] private DropMeterController _dropMeterController;
-    [Tooltip("Checked on scan: once IsFullyCompleted is true, a scan spawns the island reward instead of replaying the drop game.")]
-    [SerializeField] private CompletionSequence  _completionSequence;
 
     [Header("Island")]
     [SerializeField] private GameObject _islandPrefab;
@@ -35,7 +33,13 @@ public class Page4ARTracker : MonoBehaviour
     [SerializeField] private float _islandFadeOutDuration = 1.0f;
 
     [Header("Pre-Game Sequence")]
-    [Tooltip("Shown first on scan. Needs a Graphic (e.g. Image) with Raycast Target on, under a Canvas with a GraphicRaycaster, so tap-anywhere dismissal works.")]
+    [Tooltip("Wait after the island spawns (lets its crying animation play out) before the instruction prompt appears.")]
+    [SerializeField] private float _introWaitDuration = 9f;
+    [SerializeField] private AudioSource _introVoiceAudioSource;
+    [Tooltip("Plays this many seconds after the island spawns, during the intro wait.")]
+    [SerializeField] private AudioClip   _introVoiceClip;
+    [SerializeField] private float       _introVoiceDelay = 3.5f;
+    [Tooltip("Shown after the intro wait. Needs a Graphic (e.g. Image) with Raycast Target on, under a Canvas with a GraphicRaycaster, so tap-anywhere dismissal works.")]
     [SerializeField] private GameObject _instructionPrompt;
     [Tooltip("Parent group holding the countdown text, if it's inactive by default and needs to be shown/hidden alongside the text itself.")]
     [SerializeField] private GameObject _countdownGroup;
@@ -55,9 +59,12 @@ public class Page4ARTracker : MonoBehaviour
     private bool _suppressedWhileTracked;
 
     private Coroutine _countdownCoroutine;
+    private Coroutine _introCoroutine;
 
-    private GameObject _islandInstance;
-    private Coroutine  _islandFadeOutCoroutine;
+    private GameObject         _islandInstance;
+    private IslandVfxReference _islandVfxReference;
+    private Coroutine          _islandFadeOutCoroutine;
+    private Transform          _lastAnchor;
 
     private void Awake()
     {
@@ -111,10 +118,8 @@ public class Page4ARTracker : MonoBehaviour
             if (_suppressedWhileTracked) continue; // backed out; wait for a fresh acquisition
             if (!TryBeginFeature()) continue;
 
-            if (_completionSequence != null && _completionSequence.IsFullyCompleted)
-                BeginIslandReward(image.transform);
-            else
-                BeginPreGameSequence();
+            _lastAnchor = image.transform;
+            BeginPreGameSequence();
         }
 
         foreach (ARTrackedImage image in args.updated)
@@ -134,10 +139,8 @@ public class Page4ARTracker : MonoBehaviour
                 if (_suppressedWhileTracked) continue; // backed out; wait for a fresh acquisition
                 if (!TryBeginFeature()) continue;
 
-                if (_completionSequence != null && _completionSequence.IsFullyCompleted)
-                    BeginIslandReward(image.transform);
-                else
-                    BeginPreGameSequence();
+                _lastAnchor = image.transform;
+                BeginPreGameSequence();
             }
             else if (image.trackingState == TrackingState.None)
             {
@@ -161,18 +164,47 @@ public class Page4ARTracker : MonoBehaviour
         }
     }
 
-    // Entry point once this page claims the shared lock: show the instructions first, then
-    // (once dismissed) the countdown, and only then the actual catch-zone/meter/drops.
+    // Entry point once this page claims the shared lock: spawn the island immediately (Eira and
+    // the Water Spirit appear right away, crying — no VFX, no shrink yet), wait for that to play
+    // out, then show the instructions, then (once dismissed) the countdown, and only then the
+    // actual catch-zone/meter/drops. The island persists through the whole rest of the page —
+    // it isn't spawned again later; CompletionSequence just shrinks this same instance at the end.
     private void BeginPreGameSequence()
     {
+        if (_lastAnchor != null)
+            SpawnIsland(_lastAnchor);
+        else
+            Debug.LogError("[Page4ARTracker] No anchor available — page4 was never tracked?");
+
+        _introCoroutine = StartCoroutine(WaitThenShowInstructions());
+    }
+
+    private IEnumerator WaitThenShowInstructions()
+    {
+        yield return new WaitForSeconds(_introVoiceDelay);
+        PlayIntroVoiceLine();
+
+        float remainingWait = Mathf.Max(0f, _introWaitDuration - _introVoiceDelay);
+        yield return new WaitForSeconds(remainingWait);
+
+        _introCoroutine = null;
+
         if (_instructionPrompt == null)
         {
             Debug.LogError("[Page4ARTracker] _instructionPrompt is NULL — skipping straight to countdown.");
             StartCountdown();
-            return;
+            yield break;
         }
 
         _instructionPrompt.SetActive(true);
+    }
+
+    private void PlayIntroVoiceLine()
+    {
+        if (_introVoiceAudioSource != null && _introVoiceClip != null)
+            _introVoiceAudioSource.PlayOneShot(_introVoiceClip);
+        else
+            Debug.LogWarning("[Page4ARTracker] _introVoiceAudioSource or _introVoiceClip not assigned.");
     }
 
     // Public so it can also be wired to a Button's OnClick() in the Inspector (same pattern as
@@ -215,6 +247,12 @@ public class Page4ARTracker : MonoBehaviour
     // Called on Back cancellation and on tracking loss so nothing is left stuck on screen.
     private void CancelPreGameSequence()
     {
+        if (_introCoroutine != null)
+        {
+            StopCoroutine(_introCoroutine);
+            _introCoroutine = null;
+        }
+
         if (_countdownCoroutine != null)
         {
             StopCoroutine(_countdownCoroutine);
@@ -226,16 +264,36 @@ public class Page4ARTracker : MonoBehaviour
         if (_countdownText != null) _countdownText.gameObject.SetActive(false);
     }
 
-    // Reward for scanning page4 again after the drop game has already been fully completed once
-    // this session. Mirrors Page1Manager's island spawn, minus the clouds/overlay/finish group.
-    // The island spawns and stays, and the feature stays "active" (Back button visible, other
-    // pages locked out) the whole time it's up — nothing despawns it or releases the lock yet.
-    // FadeOutIslandThenDestroy() below is ready to go once the actual removal condition is
-    // implemented; call it (via _islandFadeOutCoroutine = StartCoroutine(FadeOutIslandThenDestroy());)
-    // from wherever that condition fires — it already calls EndFeature() once the fade finishes.
-    private void BeginIslandReward(Transform anchor)
+    // Called by CompletionSequence once the whole reward sequence has fully played out (right
+    // around when it releases the shared lock), so this page doesn't immediately re-trigger
+    // itself while still being continuously tracked — same suppression the Back-button path
+    // already uses. Naturally re-arms once tracking is lost and regained (e.g. looking away and
+    // back), same as that path, so scanning page4 again later still replays the whole thing.
+    public void MarkSequenceComplete()
     {
-        SpawnIsland(anchor);
+        _suppressedWhileTracked = true;
+    }
+
+    // The glow VFX lives inside the island prefab itself (via IslandVfxReference), not as a
+    // fixed scene reference, since it doesn't exist until the island is instantiated.
+    public ParticleSystem GetIslandGlowVfx()
+    {
+        return _islandVfxReference != null ? _islandVfxReference.GlowVfx : null;
+    }
+
+    // Same story as GetIslandGlowVfx() — the Water Spirit's Animator lives inside the spawned
+    // island prefab, not as a fixed scene reference.
+    public Animator GetIslandWaterSpiritAnimator()
+    {
+        return _islandVfxReference != null ? _islandVfxReference.WaterSpiritAnimator : null;
+    }
+
+    // Called by CompletionSequence at the end of the reward sequence — fire-and-forget, doesn't
+    // block on the shrink finishing.
+    public void BeginIslandShrink()
+    {
+        if (_islandFadeOutCoroutine != null) return;
+        _islandFadeOutCoroutine = StartCoroutine(FadeOutIslandThenDestroy());
     }
 
     private void SpawnIsland(Transform anchor)
@@ -251,6 +309,24 @@ public class Page4ARTracker : MonoBehaviour
         Vector3 position = anchor.position + new Vector3(_islandXOffset, _islandYOffset, _islandZOffset);
         _islandInstance = Instantiate(_islandPrefab, position, Quaternion.Euler(_islandRotation), anchor);
         _islandInstance.transform.localScale *= _islandScale;
+
+        _islandVfxReference = _islandInstance.GetComponent<IslandVfxReference>();
+        if (_islandVfxReference == null)
+        {
+            Debug.LogWarning("[Page4ARTracker] _islandPrefab has no IslandVfxReference — CompletionSequence's glow VFX won't play.");
+        }
+        else if (_islandVfxReference.GlowVfx == null)
+        {
+            Debug.LogWarning("[Page4ARTracker] _islandPrefab's IslandVfxReference has no Glow Vfx assigned — nothing to stop or play.");
+        }
+        else
+        {
+            // ParticleSystems default to "Play On Awake", so left alone this fires the instant
+            // the island is instantiated — stop it immediately so it stays silent until
+            // CompletionSequence explicitly plays it later.
+            _islandVfxReference.GlowVfx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            _islandVfxReference.GlowVfx.gameObject.SetActive(false);
+        }
     }
 
     private IEnumerator FadeOutIslandThenDestroy()
@@ -290,9 +366,6 @@ public class Page4ARTracker : MonoBehaviour
 
         DespawnIsland();
         _islandFadeOutCoroutine = null;
-
-        // Reward has fully played out — release the shared lock so scanning resumes.
-        EndFeature();
     }
 
     private void DespawnIsland()
@@ -300,10 +373,11 @@ public class Page4ARTracker : MonoBehaviour
         if (_islandInstance != null)
             Destroy(_islandInstance);
         _islandInstance = null;
+        _islandVfxReference = null;
     }
 
-    // Stops the island reward wherever it's at and removes the island immediately. Called on
-    // Back cancellation and on tracking loss so nothing is left mid-air or mid-fade.
+    // Stops the island wherever it's at (mid-shrink or otherwise) and removes it immediately.
+    // Called on Back cancellation and on tracking loss so nothing is left mid-air or mid-fade.
     private void CancelIslandReward()
     {
         if (_islandFadeOutCoroutine != null)

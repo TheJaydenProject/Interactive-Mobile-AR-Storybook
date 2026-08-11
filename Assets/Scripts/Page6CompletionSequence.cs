@@ -14,6 +14,23 @@ public class Page6CompletionSequence : MonoBehaviour
     [Header("Audio")]
     [SerializeField] private AudioSource _audioSource;
     [SerializeField] private AudioClip   _brickVoiceClip;
+    [Tooltip("Wait after the player completes the speech, before the brick voice clip plays.")]
+    [SerializeField] private float       _brickVoiceDelay = 1f;
+
+    [Header("Spark Reward")]
+    [SerializeField] private Material               _pendantMaterial;
+    [SerializeField] private Color                  _sparkColor = new Color(188f / 255f, 23f / 255f, 0f); // #BC1700
+    [SerializeField] private PendantManager.SparkColor _sparkType = PendantManager.SparkColor.Red;
+    [Tooltip("Wait after the overlay finishes fading out, before the pendant color snaps.")]
+    [SerializeField] private float _preGlowDelay = 0.5f;
+    [Tooltip("Gap between the pendant color snap and the glow VFX starting.")]
+    [SerializeField] private float _colorSnapToVfxDelay = 0.1f;
+    [Tooltip("Fallback VFX duration used only if the island's glow VFX can't be found.")]
+    [SerializeField] private float _fallbackVfxDuration = 4f;
+
+    [Header("Island Exit")]
+    [Tooltip("Also used to look up the glow VFX living inside the spawned island prefab (via IslandVfxReference), since that VFX doesn't exist until the island is spawned.")]
+    [SerializeField] private Page6SpeechController _speechController;
 
     [Header("References")]
     [SerializeField] private PendantManager _pendantManager;
@@ -23,11 +40,15 @@ public class Page6CompletionSequence : MonoBehaviour
 
     private bool _triggered;
 
+    private static readonly int s_baseColorId = Shader.PropertyToID("_BaseColor");
+
     private void Awake()
     {
-        if (_completionOverlay == null) return;
-        SetOverlayAlpha(0f);
-        _completionOverlay.enabled = false;
+        if (_completionOverlay != null)
+        {
+            SetOverlayAlpha(0f);
+            _completionOverlay.enabled = false;
+        }
     }
 
     public void TriggerCompletion()
@@ -42,25 +63,80 @@ public class Page6CompletionSequence : MonoBehaviour
         if (_page6WordsParent != null)
             _page6WordsParent.SetActive(false);
 
-        yield return StartCoroutine(FadeInOverlay());
-
+        yield return new WaitForSeconds(_brickVoiceDelay);
         PlayVoiceLine();
 
-        float waitTime = _brickVoiceClip != null ? _brickVoiceClip.length : _holdDuration;
-        yield return new WaitForSeconds(waitTime);
+        yield return StartCoroutine(FadeInOverlay());
+
+        yield return new WaitForSeconds(_holdDuration);
 
         yield return StartCoroutine(FadeOutOverlay());
 
+        yield return StartCoroutine(SparkRewardSequence());
+    }
+
+    // Runs right after the overlay has fully faded back out: pendant color snap + spark award,
+    // glow VFX, then the island exit and final cleanup.
+    private IEnumerator SparkRewardSequence()
+    {
+        yield return new WaitForSeconds(_preGlowDelay);
+
+        // Must fire together — the pendant color and the spark recorded in PendantManager
+        // should never be out of sync.
+        SetPendantColor(_sparkColor);
         if (_pendantManager != null)
-            _pendantManager.CollectRedSpark();
+            _pendantManager.AwardSpark(_sparkType);
         else
-            Debug.LogWarning("[Page6CompletionSequence] _pendantManager not assigned — CollectRedSpark() not called.");
+            Debug.LogWarning("[Page6CompletionSequence] _pendantManager not assigned — AwardSpark() not called.");
+
+        yield return new WaitForSeconds(_colorSnapToVfxDelay);
+
+        // The glow VFX lives inside the spawned island prefab (via IslandVfxReference), not as
+        // a fixed scene reference, since it doesn't exist until the island is instantiated.
+        ParticleSystem glowVfx = _speechController != null ? _speechController.GetIslandGlowVfx() : null;
+
+        float vfxDuration = _fallbackVfxDuration;
+        if (glowVfx != null)
+        {
+            glowVfx.gameObject.SetActive(true);
+            glowVfx.Play(true); // withChildren — the VFX has several nested particle systems
+            vfxDuration = glowVfx.main.duration;
+        }
+        else
+        {
+            Debug.LogWarning("[Page6CompletionSequence] Island's glow VFX not found — is IslandVfxReference on the island prefab, and _speechController assigned?");
+        }
+
+        // Let the VFX play out fully before exiting — timed off its actual duration, not a
+        // hardcoded value, so this still lines up if the VFX's length changes later.
+        yield return new WaitForSeconds(vfxDuration);
+
+        // Kick off the island's shrink-and-destroy — fire-and-forget, doesn't block on it
+        // finishing (same exit timing as Page1Manager's original finish-group dismissal).
+        if (_speechController != null)
+            _speechController.BeginIslandShrink();
+        else
+            Debug.LogWarning("[Page6CompletionSequence] _speechController not assigned — island shrink not triggered.");
+
+        if (glowVfx != null)
+            glowVfx.gameObject.SetActive(false);
 
         if (_completionOverlay != null)
             _completionOverlay.gameObject.SetActive(false);
 
-        // Transition has fully played out — release the shared lock so scanning resumes.
+        // Sequence has fully played out — release the shared lock so scanning resumes.
         EndFeature();
+    }
+
+    private void SetPendantColor(Color color)
+    {
+        if (_pendantMaterial == null)
+        {
+            Debug.LogWarning("[Page6CompletionSequence] _pendantMaterial not assigned — pendant color not set.");
+            return;
+        }
+
+        _pendantMaterial.SetColor(s_baseColorId, color);
     }
 
     private void EndFeature()

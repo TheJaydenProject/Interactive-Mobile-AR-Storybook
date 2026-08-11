@@ -63,8 +63,15 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private GameObject _finishGroup;
     [SerializeField] private float _finishDelay = 1.5f;
 
+    [Header("Pendant")]
+    [Tooltip("Set to a dull grey the moment page1 is scanned — the pendant's default, un-sparked state.")]
+    [SerializeField] private Material _pendantMaterial;
+    [SerializeField] private Color _dullGreyColor = new Color(0.5f, 0.5f, 0.5f);
+
     [Header("Scan Lock")]
     [SerializeField] private AppStateManager _appStateManager;
+
+    private static readonly int s_baseColorId = Shader.PropertyToID("_BaseColor");
 
     // How opaque the overlay starts and how low it goes before the last cloud.
     private const float OverlayMaxAlpha = 0.85f;
@@ -206,9 +213,22 @@ public class Page1Manager : MonoBehaviour
         // page's own completion (below) releases the shared lock.
         if (!TryBeginFeature()) return;
 
+        SetPendantColor(_dullGreyColor);
+
         _sequenceActive = true;
         _poppedCount = 0;
         _sequenceCoroutine = StartCoroutine(SpawnIslandThenFadeInThenSpawn(anchor));
+    }
+
+    private void SetPendantColor(Color color)
+    {
+        if (_pendantMaterial == null)
+        {
+            Debug.LogWarning("[Page1Manager] _pendantMaterial not assigned — pendant color not set.");
+            return;
+        }
+
+        _pendantMaterial.SetColor(s_baseColorId, color);
     }
 
     private bool TryBeginFeature()

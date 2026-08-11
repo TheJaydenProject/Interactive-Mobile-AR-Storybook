@@ -46,10 +46,14 @@ public class CatchZoneController : MonoBehaviour
         {
             InputSystem.EnableDevice(_accelerometer);
         }
+#if !UNITY_EDITOR
         else
         {
+            // Expected in the Editor (A/D keys drive it instead, see Update()) — only worth
+            // flagging on an actual device build, where a missing accelerometer is a real problem.
             Debug.LogWarning("[CatchZoneController] No accelerometer found. Catch zone will be stationary.", this);
         }
+#endif
     }
 
     private void ComputeClampBounds()
@@ -72,9 +76,27 @@ public class CatchZoneController : MonoBehaviour
 
     private void Update()
     {
-        if (_accelerometer == null) return;
+        float rawTilt;
 
-        float rawTilt = _accelerometer.acceleration.ReadValue().x;
+        if (_accelerometer != null)
+        {
+            rawTilt = _accelerometer.acceleration.ReadValue().x;
+        }
+#if UNITY_EDITOR
+        else
+        {
+            // No accelerometer in the Editor (no device to tilt) — let A/D drive the catch zone
+            // instead so the minigame can still be play-tested on PC. Editor-only via #if
+            // UNITY_EDITOR; never compiled into an actual device build, so mobile is untouched.
+            rawTilt = GetDebugKeyboardTilt();
+        }
+#else
+        else
+        {
+            return;
+        }
+#endif
+
         if (_invertX) rawTilt = -rawTilt;
 
         if (Mathf.Abs(rawTilt) > _deadZone)
@@ -96,6 +118,20 @@ public class CatchZoneController : MonoBehaviour
 
         _rectTransform.anchoredPosition = new Vector2(newX, _rectTransform.anchoredPosition.y);
     }
+
+#if UNITY_EDITOR
+    // A = left, D = right. Returns a value in the same [-1, 1] range as accelerometer.x so it
+    // drives the exact same deadzone/acceleration/deceleration logic above.
+    private static float GetDebugKeyboardTilt()
+    {
+        if (Keyboard.current == null) return 0f;
+
+        float tilt = 0f;
+        if (Keyboard.current.aKey.isPressed) tilt -= 1f;
+        if (Keyboard.current.dKey.isPressed) tilt += 1f;
+        return tilt;
+    }
+#endif
 
     private void OnDestroy()
     {
