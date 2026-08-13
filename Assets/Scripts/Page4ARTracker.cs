@@ -26,7 +26,6 @@ public class Page4ARTracker : MonoBehaviour
     [SerializeField] private float _islandXOffset = 0.0f;
     [SerializeField] private float _islandYOffset = 0.1f;
     [SerializeField] private float _islandZOffset = 0.0f;
-    [SerializeField] private float _islandSpawnDelay = 5.0f;
     [SerializeField] private float _islandScale = 1.0f;
     [SerializeField] private Vector3 _islandRotation = Vector3.zero;
     [SerializeField] private float _islandFadeOutDelay = 2.0f;
@@ -149,6 +148,7 @@ public class Page4ARTracker : MonoBehaviour
                 HideUI();
                 if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
                 else _dropSpawner.StopSpawning();
+                ReleaseLockIfHeld();
             }
         }
 
@@ -161,6 +161,7 @@ public class Page4ARTracker : MonoBehaviour
             HideUI();
             if (_dropSpawner == null) Debug.LogError("[Page4ARTracker] _dropSpawner is NULL");
             else _dropSpawner.StopSpawning();
+            ReleaseLockIfHeld();
         }
     }
 
@@ -434,6 +435,17 @@ public class Page4ARTracker : MonoBehaviour
         HideUI();
 
         _suppressedWhileTracked = true;
+        _isActive = false;
+        EndFeature();
+    }
+
+    // Releases the shared lock on genuine tracking loss (not the Back button — HandleFeatureCancelled
+    // already covers that), guarded on _isActive so this page can never release a lock another page
+    // holds. Without this, TryBeginFeature() would keep failing forever after a single look-away,
+    // even though _suppressedWhileTracked's own comment promises "looking back replays."
+    private void ReleaseLockIfHeld()
+    {
+        if (!_isActive) return;
         _isActive = false;
         EndFeature();
     }

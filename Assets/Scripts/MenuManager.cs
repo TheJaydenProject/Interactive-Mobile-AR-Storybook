@@ -20,6 +20,9 @@ public class MenuManager : MonoBehaviour
 
     private void Awake()
     {
+        // QualitySettings.vSyncCount is ignored on Android, so frame rate has to be set here instead.
+        Application.targetFrameRate = 60;
+
         if (_arSession != null) _arSession.enabled = false;
         else Debug.LogError("[MenuManager] _arSession not assigned; AR scanning will not be gated behind Start.");
     }

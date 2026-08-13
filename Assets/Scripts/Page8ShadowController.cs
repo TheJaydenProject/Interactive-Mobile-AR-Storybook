@@ -152,6 +152,7 @@ public class Page8ShadowController : MonoBehaviour
             if (removed.Value.referenceImage.name != _targetImageName) continue;
             _suppressedWhileTracked = false;
             if (IsSequenceInProgress) CancelSequence();
+            ReleaseLockIfHeld();
         }
     }
 
@@ -184,6 +185,7 @@ public class Page8ShadowController : MonoBehaviour
         else if (trackedImage.trackingState == TrackingState.None && IsSequenceInProgress)
         {
             CancelSequence();
+            ReleaseLockIfHeld();
         }
     }
 
@@ -368,6 +370,17 @@ public class Page8ShadowController : MonoBehaviour
 
         CancelSequence();
         _suppressedWhileTracked = true;
+        _isActive = false;
+        EndFeature();
+    }
+
+    // Releases the shared lock on genuine tracking loss (not the Back button — HandleFeatureCancelled
+    // already covers that), guarded on _isActive so this page can never release a lock another page
+    // holds. Without this, TryBeginFeature() would keep failing forever after a single look-away,
+    // even though _suppressedWhileTracked's own comment promises "looking back replays."
+    private void ReleaseLockIfHeld()
+    {
+        if (!_isActive) return;
         _isActive = false;
         EndFeature();
     }

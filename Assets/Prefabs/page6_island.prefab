@@ -49,6 +49,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IslandVfxReference
   _glowVfx: {fileID: 9069400030205398573}
+  _waterSpiritAnimator: {fileID: 0}
+  _orbs: []
 --- !u!1001 &6739940320318373
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -251,6 +253,54 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2599932466899631898}
     m_Modifications:
+    - target: {fileID: 2842776878963782047, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startSize.scalar
+      value: 0.12
+      objectReference: {fileID: 0}
+    - target: {fileID: 2842776878963782047, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startSize.minScalar
+      value: 0.06
+      objectReference: {fileID: 0}
+    - target: {fileID: 2842776878963782047, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.a
+      value: 0.54901963
+      objectReference: {fileID: 0}
+    - target: {fileID: 2842776878963782047, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.b
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2842776878963782047, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.g
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2842776878963782047, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.r
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5998005986911926280, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startSize.scalar
+      value: 0.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 5998005986911926280, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startLifetime.scalar
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7477845951522987092, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.a
+      value: 0.54901963
+      objectReference: {fileID: 0}
+    - target: {fileID: 7477845951522987092, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.b
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7477845951522987092, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.g
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7477845951522987092, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
+      propertyPath: InitialModule.startColor.maxColor.r
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 8782006227953946182, guid: 506dafc21c1892a48aa0ff06b718c5fe, type: 3}
       propertyPath: m_Name
       value: RedSpark_vfx

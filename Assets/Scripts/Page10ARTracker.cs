@@ -129,6 +129,7 @@ public class Page10ARTracker : MonoBehaviour
                 CancelPreGameSequence();
                 CancelIslandReward();
                 HideUI();
+                ReleaseLockIfHeld();
             }
         }
 
@@ -140,6 +141,7 @@ public class Page10ARTracker : MonoBehaviour
             CancelPreGameSequence();
             CancelIslandReward();
             HideUI();
+            ReleaseLockIfHeld();
         }
     }
 
@@ -344,6 +346,17 @@ public class Page10ARTracker : MonoBehaviour
         CancelIslandReward();
         HideUI(); // stops the orb controller's Update loop
         _suppressedWhileTracked = true;
+        _isActive = false;
+        EndFeature();
+    }
+
+    // Releases the shared lock on genuine tracking loss (not the Back button — HandleFeatureCancelled
+    // already covers that), guarded on _isActive so this page can never release a lock another page
+    // holds. Without this, TryBeginFeature() would keep failing forever after a single look-away,
+    // even though _suppressedWhileTracked's own comment promises "looking back replays."
+    private void ReleaseLockIfHeld()
+    {
+        if (!_isActive) return;
         _isActive = false;
         EndFeature();
     }

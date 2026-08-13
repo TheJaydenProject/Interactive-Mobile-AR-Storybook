@@ -36,7 +36,6 @@ public class CompletionSequence : MonoBehaviour
     [SerializeField] private DropSpawner         _dropSpawner;
     [SerializeField] private Image               _catchZoneImage;
     [SerializeField] private DropMeterController _dropMeterController;
-    [SerializeField] private Canvas              _arCanvas;
     [SerializeField] private PendantManager      _pendantManager;
 
     [Header("Scan Lock")]
@@ -154,8 +153,6 @@ public class CompletionSequence : MonoBehaviour
         if (glowVfx != null)
             glowVfx.gameObject.SetActive(false);
 
-        Cleanup();
-
         // Sequence has fully played out — release the shared lock so scanning resumes.
         EndFeature();
     }
@@ -265,11 +262,5 @@ public class CompletionSequence : MonoBehaviour
             return;
         }
         _appStateManager.EndFeature();
-    }
-
-    private void Cleanup()
-    {
-        if (_arCanvas == null) Debug.LogError("[CompletionSequence] _arCanvas is NULL");
-        else _arCanvas.gameObject.SetActive(false);
     }
 }

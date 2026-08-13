@@ -1,6 +1,6 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using System.Collections.Generic;
 
 /// <summary>
 /// Drives all four draggable sparks on Page 11 from a single controller (mirrors the
@@ -13,20 +13,21 @@ using System.Collections.Generic;
 /// </summary>
 public class Page11DragController : MonoBehaviour
 {
-    [Header("Sparks (order must match Spark Names)")]
-    [SerializeField] private Transform[] _sparks;
+    // The four draggable spark orbs and the Phoenix drop-target collider live inside the spawned
+    // island prefab (via Page11IslandReference), so they arrive at runtime through Initialize()
+    // rather than being fixed scene references.
+    private Transform[] _sparks;
+    private Collider    _phoenixCollider;
 
+    [Header("Sparks")]
     // Parallel to _sparks. Names must match PendantManager's spark strings ("Blue"/"Red"/"Yellow"/"Gold").
     [SerializeField] private string[] _sparkNames = { "Blue", "Red", "Yellow", "Gold" };
 
     [Header("Drop Target")]
-    [SerializeField] private Collider _phoenixCollider;
     [Tooltip("Sparks dock at the Phoenix position plus a small ring offset of this radius.")]
     [SerializeField] private float _dockRadius = 0.18f;
-    [Tooltip("Scales up the Phoenix placeholder square slightly relative to everything else.")]
+    [Tooltip("Scales the Phoenix up slightly relative to the sparks around it. The island's overall size is controlled separately by Page11ARTracker's Island Scale.")]
     [SerializeField] private float _phoenixScaleMultiplier = 1.15f;
-    [Tooltip("Globally scales down the Phoenix and all Sparks. Adjust this to match Page 10's size.")]
-    [SerializeField] private float _globalScaleMultiplier = 0.3f;
 
     [Header("Scatter Settings")]
     [Tooltip("How much to randomly scatter the initial positions of the sparks.")]
@@ -37,6 +38,25 @@ public class Page11DragController : MonoBehaviour
     [SerializeField] private float _floatFrequency = 1.5f;
     [SerializeField] private float _driftAmplitude = 0.005f;
 
+    [Header("Celebration")]
+    [Tooltip("Max degrees per second the sparks orbit around the Phoenix during the celebration, reached after ramping up. Runs until StopOrbitCelebration() is called (Page11CompletionSequence calls it the moment the Phoenix stops being visible), not a fixed duration, so it stays in sync with the rainbow colour cycle.")]
+    [SerializeField] private float _celebrationOrbitSpeed = 120f;
+    [Tooltip("How long it takes the orbit to ease up from a standstill to full speed.")]
+    [SerializeField] private float _celebrationRampUpDuration = 1.5f;
+
+    private Coroutine _orbitCoroutine;
+
+    [Header("Audio")]
+    [SerializeField] private AudioSource _audioSource;
+    [Tooltip("Plays the instant the Blue spark is dropped on the Phoenix.")]
+    [SerializeField] private AudioClip _blueSparkVoiceClip;
+    [Tooltip("Plays the instant the Red spark is dropped on the Phoenix.")]
+    [SerializeField] private AudioClip _redSparkVoiceClip;
+    [Tooltip("Plays the instant the Yellow spark is dropped on the Phoenix.")]
+    [SerializeField] private AudioClip _yellowSparkVoiceClip;
+    [Tooltip("Plays the instant the Gold spark is dropped on the Phoenix.")]
+    [SerializeField] private AudioClip _goldSparkVoiceClip;
+
     [Header("Dependencies")]
     [SerializeField] private PendantManager           _pendantManager;
     [SerializeField] private Page11CompletionSequence _completionSequence;
@@ -45,25 +65,21 @@ public class Page11DragController : MonoBehaviour
     [Tooltip("When true, skips the collected-spark check so all four can be dragged even if not earned yet. For isolated Page 11 testing.")]
     [SerializeField] private bool _debugUnlockAllSparks;
 
-    // Lines spoken when each spark is applied (placeholder logging until VO/text assets exist).
-    private static readonly Dictionary<string, string> s_sparkLines = new Dictionary<string, string>
-    {
-        { "Blue",   "Sadness helps you care" },
-        { "Red",    "Anger gives strength"    },
-        { "Yellow", "Fear helps you be brave" },
-        { "Gold",   "Joy gives you energy"    },
-    };
-
     private Vector3[] _initialLocalPositions;
     private float[]   _phaseOffsets;
     private bool[]    _applied;
     private bool[]    _slotOccupied;
+    private int[]     _sparkSlotIndex;
     private int       _appliedCount;
 
     private int      _heldIndex = -1;
     private Collider _heldCollider;
     private float    _heldCameraDistance;
     private Vector2  _lastPointerPos;
+
+    // Blocks picking up a new spark for the duration of another spark's voice line, set/cleared
+    // by PlaySparkVoiceLine's coroutine.
+    private bool _sparkVoiceLineBusy;
 
     // Lives on the always-active tracker GameObject (same as Page10OrbController before its
     // perf fix), not under the page's 3D content, so Update() must be told explicitly when
@@ -76,32 +92,46 @@ public class Page11DragController : MonoBehaviour
         _isActive = active;
     }
 
-    private void Awake()
+    // Called by Page11ARTracker right after it spawns (or despawns, passing nulls) the island —
+    // the sparks and Phoenix collider live inside the island prefab itself (via
+    // Page11IslandReference), so this controller can't hold fixed references to them; it has to
+    // be told which instance is actually live. Resets all per-spark state for the new set.
+    public void Initialize(Transform[] sparks, Collider phoenixCollider)
     {
-        // Dynamically scale the dock radius so spheres always hug the Phoenix tightly no matter the size
-        _dockRadius *= _globalScaleMultiplier;
+        _sparks = sparks;
+        _phoenixCollider = phoenixCollider;
 
+        _heldIndex = -1;
+        _heldCollider = null;
+        _sparkVoiceLineBusy = false;
+        _appliedCount = 0;
+
+        // Scales the Phoenix up slightly relative to the sparks around it — the whole island
+        // (Phoenix included) is already sized correctly via Page11ARTracker's Island Scale, so
+        // this is purely a relative Phoenix-vs-sparks size ratio, not a global shrink.
         if (_phoenixCollider != null)
-        {
-            _phoenixCollider.transform.localScale *= (_phoenixScaleMultiplier * _globalScaleMultiplier);
-        }
+            _phoenixCollider.transform.localScale *= _phoenixScaleMultiplier;
 
-        if (_sparks == null) return;
+        if (_sparks == null)
+        {
+            _initialLocalPositions = null;
+            _phaseOffsets = null;
+            _applied = null;
+            _slotOccupied = null;
+            _sparkSlotIndex = null;
+            return;
+        }
 
         _initialLocalPositions = new Vector3[_sparks.Length];
         _phaseOffsets = new float[_sparks.Length];
         _applied = new bool[_sparks.Length];
         _slotOccupied = new bool[_sparks.Length];
+        _sparkSlotIndex = new int[_sparks.Length];
 
         for (int i = 0; i < _sparks.Length; i++)
         {
             if (_sparks[i] != null)
             {
-                _sparks[i].localScale *= _globalScaleMultiplier;
-                
-                // Pull their initial positions closer to the center proportionally to the scale down
-                _sparks[i].localPosition *= _globalScaleMultiplier;
-                
                 // Apply a small random scatter so they don't sit in a perfect ring
                 Vector3 rand = Random.insideUnitSphere * _scatterRadius;
                 _sparks[i].localPosition += rand;
@@ -128,13 +158,26 @@ public class Page11DragController : MonoBehaviour
 
     private void Update()
     {
+        // Floats the sparks the instant the island spawns (Initialize() populates _sparks),
+        // independent of _isActive — dragging stays gated behind instruction dismissal, but the
+        // idle bob shouldn't wait for that.
+        UpdateFloatingMotion();
+
         if (!_isActive) return;
         if (Camera.main == null) return;
 
         if (_heldIndex == -1) HandlePickup();
         else                  HandleDragAndRelease();
+    }
 
-        UpdateFloatingMotion();
+    // Called by Page11ARTracker (relaying from Page11CompletionSequence) once the screen is
+    // fully covered by the completion overlay, so the sparks disappear alongside the Phoenix
+    // instead of staying visible after the reveal.
+    public void HideSparks()
+    {
+        if (_sparks == null) return;
+        foreach (Transform spark in _sparks)
+            if (spark != null) spark.gameObject.SetActive(false);
     }
 
     /// <summary>
@@ -180,6 +223,7 @@ public class Page11DragController : MonoBehaviour
 
     private void HandlePickup()
     {
+        if (_sparkVoiceLineBusy) return;
         if (!TryGetPointerDown(out Vector2 screenPos)) return;
 
         Ray ray = Camera.main.ScreenPointToRay(screenPos);
@@ -189,10 +233,13 @@ public class Page11DragController : MonoBehaviour
         if (index == -1 || _applied[index]) return;
 
         if (!IsSparkUnlocked(index))
-        {
-            Debug.Log($"[Page11DragController] '{_sparkNames[index]}' spark not collected yet — drag ignored.");
             return;
-        }
+
+        // One-time height correction, not every frame: sync this spark's floating "home" height
+        // to wherever the Phoenix currently is, in case it rose after this spark's initial
+        // position was captured. Also fixes where it lands if the drop misses and it returns.
+        if (_phoenixCollider != null && _sparks[index].parent != null)
+            _initialLocalPositions[index].y = _sparks[index].parent.InverseTransformPoint(_phoenixCollider.transform.position).y;
 
         _heldIndex = index;
         _heldCameraDistance = Vector3.Distance(Camera.main.transform.position, _sparks[index].position);
@@ -237,9 +284,17 @@ public class Page11DragController : MonoBehaviour
         }
 
         Ray ray = Camera.main.ScreenPointToRay(screenPos);
-        // Held spark's collider is disabled, so a hit here is the Phoenix (or nothing).
-        if (Physics.Raycast(ray, out RaycastHit hit))
-            return hit.collider == _phoenixCollider;
+
+        // RaycastAll, not a single Raycast: once other sparks are docked and orbiting the
+        // Phoenix, one of them can sit between the camera and the Phoenix collider along this
+        // ray. A single Raycast would report only that nearer spark and wrongly fail the drop —
+        // sending the held spark back to its own resting spot, which can look like it "snapped"
+        // onto whichever spark got in the way. Any hit on the Phoenix along the ray counts.
+        RaycastHit[] hits = Physics.RaycastAll(ray);
+        foreach (RaycastHit hit in hits)
+        {
+            if (hit.collider == _phoenixCollider) return true;
+        }
 
         return false;
     }
@@ -261,10 +316,12 @@ public class Page11DragController : MonoBehaviour
                 if (!_slotOccupied[i])
                 {
                     float angle = i * (Mathf.PI * 2f / Mathf.Max(1, _sparks.Length));
-                    Vector3 localOffset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * _dockRadius;
+                    // Ring stands in the local X-Y plane (all sparks share the same local Z),
+                    // like Saturn's rings tilted 90° up, instead of the flat X-Z "same height" ring.
+                    Vector3 localOffset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * _dockRadius;
                     Vector3 worldOffset = _phoenixCollider.transform.rotation * localOffset;
                     Vector3 slotPos = _phoenixCollider.transform.position + worldOffset;
-                    
+
                     float dist = Vector3.Distance(spark.position, slotPos);
                     if (dist < minDistance)
                     {
@@ -278,28 +335,119 @@ public class Page11DragController : MonoBehaviour
             if (closestSlot != -1)
             {
                 _slotOccupied[closestSlot] = true;
+                _sparkSlotIndex[index] = closestSlot;
                 spark.position = bestPos;
             }
             else
             {
                 // Fallback
+                _sparkSlotIndex[index] = index;
                 float angle = index * (Mathf.PI * 2f / Mathf.Max(1, _sparks.Length));
-                Vector3 localOffset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * _dockRadius;
+                Vector3 localOffset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * _dockRadius;
                 Vector3 worldOffset = _phoenixCollider.transform.rotation * localOffset;
                 spark.position = _phoenixCollider.transform.position + worldOffset;
             }
         }
 
         string name = index < _sparkNames.Length ? _sparkNames[index] : "?";
-        string line = s_sparkLines.TryGetValue(name, out string l) ? l : "(no line)";
-        Debug.Log($"[Page11DragController] {name} spark applied — \"{line}\"");
+        PlaySparkVoiceLine(name);
 
         if (_appliedCount >= _sparks.Length)
         {
+            _orbitCoroutine = StartCoroutine(OrbitCelebration());
+
             if (_completionSequence == null)
                 Debug.LogError("[Page11DragController] _completionSequence is NULL — completion not triggered.");
             else
                 _completionSequence.TriggerCompletion();
+        }
+    }
+
+    // Called by Page11ARTracker (relaying from Page11CompletionSequence) the moment the Phoenix
+    // stops being visible, so the orbit ends at the same time the rainbow colour cycle does
+    // instead of on its own separate fixed timer.
+    public void StopOrbitCelebration()
+    {
+        if (_orbitCoroutine != null)
+        {
+            StopCoroutine(_orbitCoroutine);
+            _orbitCoroutine = null;
+        }
+    }
+
+    // Once all 4 sparks are docked, keeps them all orbiting together around the Phoenix (along
+    // the same vertical ring they're already docked on) indefinitely, until StopOrbitCelebration()
+    // is called — not a fixed duration, so it can stay in sync with however long the rainbow
+    // colour cycle actually runs for.
+    private IEnumerator OrbitCelebration()
+    {
+        if (_phoenixCollider == null) yield break;
+
+        float ringAngleStep = Mathf.PI * 2f / Mathf.Max(1, _sparks.Length);
+        float elapsed = 0f;
+        float orbitOffsetDegrees = 0f;
+
+        while (true)
+        {
+            // Ease the angular speed up from a standstill to full speed instead of snapping
+            // straight to it — quadratic so it really does start slow, not just linearly ramp.
+            float speedT = _celebrationRampUpDuration > 0f ? Mathf.Clamp01(elapsed / _celebrationRampUpDuration) : 1f;
+            float currentSpeed = Mathf.Lerp(0f, _celebrationOrbitSpeed, speedT * speedT);
+            orbitOffsetDegrees += currentSpeed * Time.deltaTime;
+            elapsed += Time.deltaTime;
+
+            float orbitOffset = orbitOffsetDegrees * Mathf.Deg2Rad;
+
+            if (_phoenixCollider == null) yield break;
+
+            for (int i = 0; i < _sparks.Length; i++)
+            {
+                if (_sparks[i] == null || !_applied[i]) continue;
+
+                float angle = (_sparkSlotIndex[i] * ringAngleStep) + orbitOffset;
+                Vector3 localOffset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * _dockRadius;
+                Vector3 worldOffset = _phoenixCollider.transform.rotation * localOffset;
+                _sparks[i].position = _phoenixCollider.transform.position + worldOffset;
+            }
+
+            yield return null;
+        }
+    }
+
+    private void PlaySparkVoiceLine(string sparkName)
+    {
+        AudioClip clip = GetSparkVoiceClip(sparkName);
+        if (_audioSource != null && clip != null)
+        {
+            _audioSource.PlayOneShot(clip);
+            // AudioSource.isPlaying doesn't reliably reflect PlayOneShot clips, so track the
+            // "busy" window with our own timer instead of relying on it.
+            StartCoroutine(BlockPickupWhileVoiceLinePlays(clip.length));
+        }
+        else
+        {
+            Debug.LogWarning($"[Page11DragController] AudioSource or voice clip for '{sparkName}' spark not assigned.");
+        }
+    }
+
+    // Blocks picking up any spark for the duration of whichever spark's voice line just started,
+    // so the player can't yank the next one out mid-line.
+    private IEnumerator BlockPickupWhileVoiceLinePlays(float duration)
+    {
+        _sparkVoiceLineBusy = true;
+        yield return new WaitForSeconds(duration);
+        _sparkVoiceLineBusy = false;
+    }
+
+    private AudioClip GetSparkVoiceClip(string sparkName)
+    {
+        switch (sparkName)
+        {
+            case "Blue":   return _blueSparkVoiceClip;
+            case "Red":    return _redSparkVoiceClip;
+            case "Yellow": return _yellowSparkVoiceClip;
+            case "Gold":   return _goldSparkVoiceClip;
+            default:       return null;
         }
     }
 

@@ -193,7 +193,10 @@ public class Page1Manager : MonoBehaviour
             if (image.trackingState == TrackingState.Tracking && !_sequenceActive)
                 StartSequence(image.transform);
             else if (image.trackingState == TrackingState.None && _sequenceActive)
+            {
                 StopSequence();
+                ReleaseLockIfHeld();
+            }
         }
 
         foreach (var removed in args.removed)
@@ -201,6 +204,7 @@ public class Page1Manager : MonoBehaviour
             if (removed.Value.referenceImage.name != "page1") continue;
             _suppressedWhileTracked = false;
             StopSequence();
+            ReleaseLockIfHeld();
         }
     }
 
@@ -256,6 +260,17 @@ public class Page1Manager : MonoBehaviour
 
         StopSequence(); // stops the fade coroutine, despawns clouds — no partial credit exists for Page 1 anyway
         _suppressedWhileTracked = true;
+        _isActive = false;
+        EndFeature();
+    }
+
+    // Releases the shared lock on genuine tracking loss (not the Back button — HandleFeatureCancelled
+    // already covers that), guarded on _isActive so this page can never release a lock another page
+    // holds. Without this, TryBeginFeature() would keep failing forever after a single look-away,
+    // even though _suppressedWhileTracked's own comment promises "looking back replays."
+    private void ReleaseLockIfHeld()
+    {
+        if (!_isActive) return;
         _isActive = false;
         EndFeature();
     }
