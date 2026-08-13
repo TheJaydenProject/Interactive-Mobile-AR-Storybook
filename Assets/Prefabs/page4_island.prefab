@@ -8072,7 +8072,7 @@ Transform:
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 427.87573, y: -0.000000010896551, z: 3561.4663}
   m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 7712401732300421464}
   - {fileID: 4322023281988085130}
@@ -8094,6 +8094,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::IslandVfxReference
   _glowVfx: {fileID: 3941760909824231028}
   _waterSpiritAnimator: {fileID: 3273404233711706781}
+  _orbs: []
 --- !u!1 &6177347430533652864
 GameObject:
   m_ObjectHideFlags: 0

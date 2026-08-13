@@ -14,9 +14,9 @@ public class Page11CompletionSequence : MonoBehaviour
     [SerializeField] private Image _completionOverlay;
     [Tooltip("Delay in seconds after all sparks are placed before the sequence begins.")]
     [SerializeField] private float _delayBeforeSequence = 2.0f;
-    [SerializeField] private float _fadeInDuration  = 1.5f;
-    [SerializeField] private float _holdDuration     = 1.0f;
-    [SerializeField] private float _fadeOutDuration  = 1.5f;
+    [SerializeField] private float _fadeInDuration  = 0.8f;
+    [SerializeField] private float _holdDuration     = 0.5f;
+    [SerializeField] private float _fadeOutDuration  = 0.8f;
 
     [Header("Phoenix Transformation")]
     [SerializeField] private Renderer _phoenixRenderer;

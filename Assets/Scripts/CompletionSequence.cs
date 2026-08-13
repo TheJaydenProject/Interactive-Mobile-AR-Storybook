@@ -7,9 +7,9 @@ public class CompletionSequence : MonoBehaviour
     [Header("UI")]
     [SerializeField] private Image  _completionOverlay;
     [SerializeField] private float  _uiFadeOutDuration = 0.5f;
-    [SerializeField] private float  _fadeInDuration    = 1.5f;
-    [SerializeField] private float  _holdDuration      = 1.0f;
-    [SerializeField] private float  _fadeOutDuration   = 1.5f;
+    [SerializeField] private float  _fadeInDuration    = 0.8f;
+    [SerializeField] private float  _holdDuration      = 0.5f;
+    [SerializeField] private float  _fadeOutDuration   = 0.8f;
 
     [Header("Audio")]
     [SerializeField] private AudioSource _voiceAudioSource;

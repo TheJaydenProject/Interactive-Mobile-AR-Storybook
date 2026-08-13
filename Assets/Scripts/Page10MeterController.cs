@@ -13,6 +13,9 @@ public class Page10MeterController : MonoBehaviour
     [Header("Audio")]
     [SerializeField] private AudioSource _catchAudioSource;
     [SerializeField] private AudioClip   _catchSoundClip;
+    [Tooltip("Per-catch pitch randomization so the SFX doesn't sound identical every time. Kept narrow for a subtle variation.")]
+    [SerializeField] private float _catchPitchMin = 0.95f;
+    [SerializeField] private float _catchPitchMax = 1.05f;
 
     [Header("Dependencies")]
     [SerializeField] private Page10CompletionSequence _completionSequence;
@@ -94,7 +97,9 @@ public class Page10MeterController : MonoBehaviour
 
     private void PlayCatchSound()
     {
-        if (_catchAudioSource != null && _catchSoundClip != null)
-            _catchAudioSource.PlayOneShot(_catchSoundClip);
+        if (_catchAudioSource == null || _catchSoundClip == null) return;
+
+        _catchAudioSource.pitch = Random.Range(_catchPitchMin, _catchPitchMax);
+        _catchAudioSource.PlayOneShot(_catchSoundClip);
     }
 }

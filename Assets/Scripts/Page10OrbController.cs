@@ -3,9 +3,6 @@ using UnityEngine.InputSystem;
 
 public class Page10OrbController : MonoBehaviour
 {
-    [Header("Orbs")]
-    [SerializeField] private Transform[] _orbs;
-
     [Header("Floating Motion")]
     [SerializeField] private float _floatAmplitude = 0.03f;
     [SerializeField] private float _floatFrequency = 1.5f;
@@ -14,6 +11,7 @@ public class Page10OrbController : MonoBehaviour
     [Header("Dependencies")]
     [SerializeField] private Page10MeterController _meterController;
 
+    private Transform[] _orbs;
     private Vector3[] _initialLocalPositions;
     private float[] _phaseOffsets;
 
@@ -27,20 +25,30 @@ public class Page10OrbController : MonoBehaviour
         _isActive = active;
     }
 
-    private void Awake()
+    // Called by Page10ARTracker right after it spawns (or despawns, passing null) the island —
+    // the orbs live inside the island prefab itself (via IslandVfxReference), so this controller
+    // can't hold a fixed reference to them the way it used to; it has to be told which instance
+    // is actually live. Recomputes the float-motion baseline for the new set.
+    public void SetOrbs(Transform[] orbs)
     {
-        if (_orbs != null)
-        {
-            _initialLocalPositions = new Vector3[_orbs.Length];
-            _phaseOffsets = new float[_orbs.Length];
+        _orbs = orbs;
 
-            for (int i = 0; i < _orbs.Length; i++)
+        if (_orbs == null)
+        {
+            _initialLocalPositions = null;
+            _phaseOffsets = null;
+            return;
+        }
+
+        _initialLocalPositions = new Vector3[_orbs.Length];
+        _phaseOffsets = new float[_orbs.Length];
+
+        for (int i = 0; i < _orbs.Length; i++)
+        {
+            if (_orbs[i] != null)
             {
-                if (_orbs[i] != null)
-                {
-                    _initialLocalPositions[i] = _orbs[i].localPosition;
-                    _phaseOffsets[i] = Random.Range(0f, Mathf.PI * 2f);
-                }
+                _initialLocalPositions[i] = _orbs[i].localPosition;
+                _phaseOffsets[i] = Random.Range(0f, Mathf.PI * 2f);
             }
         }
     }
