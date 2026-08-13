@@ -18,6 +18,8 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     [SerializeField] private GameObject _textBackgroundOverlay;
     [SerializeField] private float      _wordsFadeInDuration = 0.5f;
     [SerializeField] private TMP_Text[] _wordLabels;
+    [Tooltip("How long the fully-lit words panel stays visible after the last word matches, before it hides and the completion sequence (SFX, etc.) takes over.")]
+    [SerializeField] private float      _wordsHoldDuration = 2f;
 
     [Header("Island")]
     [SerializeField] private GameObject _islandPrefab;
@@ -61,9 +63,15 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     // CheckWords must only replay words confirmed since this point, not since word 0.
     private int       _sessionStartWordIndex;
     private bool      _isListening;
-    private bool      _completionTriggered;
+    private bool      _completionTriggered; // permanent once set — TriggerCompletion() actually fired; blocks StartListening() forever after
+    // True only from the moment the last word matches until the hold below finishes (or is
+    // cancelled). Separate from _completionTriggered so a Back-button/tracking-loss cancel during
+    // the hold can safely reset this and allow a full replay, without also being able to reset
+    // _completionTriggered after a genuine completion.
+    private bool      _completionPending;
     private Coroutine _restartCoroutine;
     private Coroutine _fadeInCoroutine;
+    private Coroutine _completionHoldCoroutine;
 
     private GameObject         _islandInstance;
     private IslandVfxReference _islandVfxReference;
@@ -414,6 +422,12 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
     public void StopListening()
     {
         _isListening = false;
+        // Also unblocks CheckWords/OnResultReceived (see _completionPending) — safe even mid-hold
+        // (see CompleteAfterWordsHold): if this runs before the hold finishes, cancelling the
+        // coroutine below stops it from firing the completion sequence after the fact; if it runs
+        // because the hold finished (via TriggerCompletion), _completionTriggered has already
+        // permanently taken over as the real "don't replay" guard, so clearing this is harmless.
+        _completionPending = false;
         if (_restartCoroutine != null)
         {
             StopCoroutine(_restartCoroutine);
@@ -423,6 +437,11 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         {
             StopCoroutine(_fadeInCoroutine);
             _fadeInCoroutine = null;
+        }
+        if (_completionHoldCoroutine != null)
+        {
+            StopCoroutine(_completionHoldCoroutine);
+            _completionHoldCoroutine = null;
         }
         SpeechToText.ForceStop();
         _page6WordsParent?.SetActive(false);
@@ -463,7 +482,7 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 
         CheckWords(spokenText);
 
-        if (!_completionTriggered && _isListening)
+        if (!_completionTriggered && !_completionPending && _isListening)
             _restartCoroutine = StartCoroutine(RestartAssoonAsReady());
     }
 
@@ -471,7 +490,7 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
 
     private void CheckWords(string transcript)
     {
-        if (_completionTriggered) return;
+        if (_completionTriggered || _completionPending) return;
         if (string.IsNullOrEmpty(transcript)) return;
 
         string lower = transcript.ToLowerInvariant();
@@ -499,7 +518,24 @@ public class Page6SpeechController : MonoBehaviour, ISpeechToTextListener
         }
 
         if (_nextWordIndex >= TargetWords.Length)
-            TriggerCompletion();
+        {
+            // Lock out re-entry immediately (a trailing speech callback could otherwise start a
+            // second hold), but don't hide the panel/fire completion until after the hold below —
+            // TriggerCompletion() used to run this same frame, so the panel could disappear before
+            // the last word's lit colour ever actually got rendered. _completionPending (not
+            // _completionTriggered) is the guard here specifically so a cancel during the hold
+            // (see StopListening) can reset it and allow a full replay.
+            _completionPending = true;
+            _completionHoldCoroutine = StartCoroutine(CompleteAfterWordsHold());
+        }
+    }
+
+    private IEnumerator CompleteAfterWordsHold()
+    {
+        yield return new WaitForSeconds(_wordsHoldDuration);
+
+        _completionHoldCoroutine = null;
+        TriggerCompletion();
     }
 
     // Finds the first whole-word occurrence of `word` in `text` at or after `startIndex`.
