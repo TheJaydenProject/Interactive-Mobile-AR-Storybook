@@ -42,10 +42,19 @@ public class MenuManager : MonoBehaviour
 
     // Camera and microphone are requested together here, at the menu, rather than lazily
     // when Page 6's mic feature runs — so both prompts happen up front and a denial can be
-    // handled before any AR/scanner UI loads.
+    // handled before any AR/scanner UI loads. Gallery-write is requested here too (for Page 12's
+    // selfie capture) but isn't gated on — a denial there shouldn't block the rest of the book,
+    // only the save attempt later, which already logs/handles a failure on its own.
     private IEnumerator RequestPermissionsAndProceed()
     {
         _isRequestingPermissions = true;
+
+        bool galleryPermissionResolved = false;
+        NativeGallery.RequestPermissionAsync(
+            permission => galleryPermissionResolved = true,
+            NativeGallery.PermissionType.Write,
+            NativeGallery.MediaType.Image);
+        yield return new WaitUntil(() => galleryPermissionResolved);
 
         yield return Application.RequestUserAuthorization(UserAuthorization.WebCam | UserAuthorization.Microphone);
 
