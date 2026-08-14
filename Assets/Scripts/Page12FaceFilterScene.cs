@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -16,6 +17,18 @@ public class Page12FaceFilterScene : MonoBehaviour
     [Tooltip("Name of the main scene to restart into. Must be added to File > Build Settings > Scenes In Build.")]
     [SerializeField] private string _mainSceneName = "Ar1";
 
+    [Header("Selfie Capture")]
+    [SerializeField] private string _albumName = "EiraAR";
+    [SerializeField] private string _fileNamePrefix = "eira_selfie";
+    [Tooltip("Hidden for one frame during capture so they don't end up in the saved photo (e.g. the shutter button itself).")]
+    [SerializeField] private GameObject[] _uiToHideDuringCapture;
+    [SerializeField] private AudioSource _shutterAudioSource;
+    [SerializeField] private AudioClip _shutterSfx;
+    [Tooltip("Minimum seconds between captures, so mashing the shutter button doesn't spam the gallery.")]
+    [SerializeField] private float _captureCooldown = 1f;
+
+    private float _lastCaptureTime = -Mathf.Infinity;
+
     // Guards against a rapid double-tap on Back calling AppRestarter.RestartIntoScene() twice
     // while the process kill is in flight.
     private bool _triggered;
@@ -28,9 +41,57 @@ public class Page12FaceFilterScene : MonoBehaviour
         AppRestarter.RestartIntoScene(_mainSceneName);
     }
 
-    // Wire this to a capture button, if you want one here.
+    // Wire this to the shutter button's OnClick().
     public void CaptureScreenshot()
     {
-        ScreenCapture.CaptureScreenshot($"page12_selfie_{System.DateTime.Now:yyyyMMdd_HHmmss}.png");
+        if (Time.time - _lastCaptureTime < _captureCooldown) return;
+        _lastCaptureTime = Time.time;
+
+        if (_shutterAudioSource != null && _shutterSfx != null)
+            _shutterAudioSource.PlayOneShot(_shutterSfx);
+
+        StartCoroutine(CaptureAndSaveRoutine());
+    }
+
+    private IEnumerator CaptureAndSaveRoutine()
+    {
+        SetUiVisible(false);
+
+        // Wait a frame so the hidden UI is actually gone from the render before grabbing the screenshot.
+        yield return new WaitForEndOfFrame();
+
+        Texture2D screenshot = ScreenCapture.CaptureScreenshotAsTexture();
+
+        SetUiVisible(true);
+
+        if (screenshot == null)
+        {
+            Debug.LogError("[Page12FaceFilterScene] Screenshot capture returned null.");
+            yield break;
+        }
+
+        string fileName = $"{_fileNamePrefix}_{System.DateTime.Now:yyyyMMdd_HHmmss}.png";
+
+        NativeGallery.SaveImageToGallery(screenshot, _albumName, fileName, (bool success, string savedPath) =>
+        {
+            if (success)
+                Debug.Log($"[Page12FaceFilterScene] Saved to {savedPath}");
+            else
+                Debug.LogWarning("[Page12FaceFilterScene] Gallery save failed or permission denied.");
+        });
+
+        // CaptureScreenshotAsTexture allocates a new Texture2D each call; must destroy it manually or it leaks.
+        Destroy(screenshot);
+    }
+
+    private void SetUiVisible(bool visible)
+    {
+        if (_uiToHideDuringCapture == null) return;
+
+        foreach (GameObject uiElement in _uiToHideDuringCapture)
+        {
+            if (uiElement != null)
+                uiElement.SetActive(visible);
+        }
     }
 }

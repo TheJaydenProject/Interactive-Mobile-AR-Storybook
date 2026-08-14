@@ -10,7 +10,6 @@ Library: D:\Unity\AR_Storybook\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burs
 --target-framework=NetFramework
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=D:\Unity\AR_Storybook\Temp\Burst
---debug=LineOnly
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.4.5f1/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=D:\Unity\AR_Storybook\Library\Burst
 --output=D:\Unity\AR_Storybook\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated
@@ -127,7 +126,6 @@ Library: D:\Unity\AR_Storybook\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burs
 --target-framework=NetFramework
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=D:\Unity\AR_Storybook\Temp\Burst
---debug=LineOnly
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.4.5f1/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=D:\Unity\AR_Storybook\Library\Burst
 --output=D:\Unity\AR_Storybook\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated
@@ -205,7 +203,6 @@ Library: D:\Unity\AR_Storybook\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burs
 --float-mode=Fast
 --generate-link-xml=Temp\burst.link.xml
 --temp-folder=D:\Unity\AR_Storybook\Temp\Burst
---debug=LineOnly
 --key-folder=C:/Program Files/Unity/Hub/Editor/6000.4.5f1/Editor/Data/PlaybackEngines/AndroidPlayer
 --decode-folder=D:\Unity\AR_Storybook\Library\Burst
 --output=D:\Unity\AR_Storybook\Temp\BurstOutput\tempburstlibs\arm64-v8a\lib_burst_generated

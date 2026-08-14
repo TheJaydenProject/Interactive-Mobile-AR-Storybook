@@ -15,6 +15,7 @@
     "com.unity.xr.arkit": "6.4.3",
     "com.unity.xr.interaction.toolkit": "3.4.1",
     "com.unity.xr.management": "4.5.4",
+    "com.yasirkula.nativegallery": "https://github.com/yasirkula/UnityNativeGallery.git",
     "com.unity.modules.accessibility": "1.0.0",
     "com.unity.modules.adaptiveperformance": "1.0.0",
     "com.unity.modules.ai": "1.0.0",
