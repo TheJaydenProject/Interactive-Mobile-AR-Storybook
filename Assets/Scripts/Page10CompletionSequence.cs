@@ -48,6 +48,7 @@ public class Page10CompletionSequence : MonoBehaviour
     [SerializeField] private AppStateManager _appStateManager;
 
     private bool _triggered;
+    private Coroutine _completionCoroutine;
 
     private static readonly int s_baseColorId = Shader.PropertyToID("_BaseColor");
 
@@ -60,11 +61,42 @@ public class Page10CompletionSequence : MonoBehaviour
         }
     }
 
+    private void OnEnable()
+    {
+        if (_appStateManager != null)
+            _appStateManager.OnFeatureCancelled += HandleFeatureCancelled;
+    }
+
+    private void OnDisable()
+    {
+        if (_appStateManager != null)
+            _appStateManager.OnFeatureCancelled -= HandleFeatureCancelled;
+    }
+
+    // Back/Back To Menu pressed mid-reward-sequence. Page10ARTracker's own cancel handler already
+    // destroys the island and releases the shared lock — this only needs to stop the coroutine
+    // before it reaches its own (now redundant, and potentially stale) EndFeature() call below,
+    // and reset _triggered so a retried attempt at this page can fire the sequence again.
+    private void HandleFeatureCancelled()
+    {
+        if (_completionCoroutine == null) return; // not currently running; nothing to cancel
+
+        StopCoroutine(_completionCoroutine);
+        _completionCoroutine = null;
+        _triggered = false;
+
+        if (_completionOverlay != null)
+        {
+            SetOverlayAlpha(0f);
+            _completionOverlay.enabled = false;
+        }
+    }
+
     public void TriggerCompletion()
     {
         if (_triggered) return;
         _triggered = true;
-        StartCoroutine(CompletionRoutine());
+        _completionCoroutine = StartCoroutine(CompletionRoutine());
     }
 
     private IEnumerator CompletionRoutine()

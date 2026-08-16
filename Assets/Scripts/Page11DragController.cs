@@ -80,6 +80,7 @@ public class Page11DragController : MonoBehaviour
     // Blocks picking up a new spark for the duration of another spark's voice line, set/cleared
     // by PlaySparkVoiceLine's coroutine.
     private bool _sparkVoiceLineBusy;
+    private Coroutine _voiceLineBusyCoroutine;
 
     // Lives on the always-active tracker GameObject (same as Page10OrbController before its
     // perf fix), not under the page's 3D content, so Update() must be told explicitly when
@@ -187,6 +188,16 @@ public class Page11DragController : MonoBehaviour
     /// </summary>
     public void CancelDrag()
     {
+        // Runs unconditionally, not just when a spark is currently held — a voice line can still
+        // be playing (and blocking pickup) even after the held spark that triggered it was
+        // already released, since _heldIndex resets right after ApplySpark() starts this timer.
+        if (_voiceLineBusyCoroutine != null)
+        {
+            StopCoroutine(_voiceLineBusyCoroutine);
+            _voiceLineBusyCoroutine = null;
+        }
+        _sparkVoiceLineBusy = false;
+
         if (_heldIndex == -1) return;
 
         ReturnSpark(_heldIndex);
@@ -422,7 +433,7 @@ public class Page11DragController : MonoBehaviour
             _audioSource.PlayOneShot(clip);
             // AudioSource.isPlaying doesn't reliably reflect PlayOneShot clips, so track the
             // "busy" window with our own timer instead of relying on it.
-            StartCoroutine(BlockPickupWhileVoiceLinePlays(clip.length));
+            _voiceLineBusyCoroutine = StartCoroutine(BlockPickupWhileVoiceLinePlays(clip.length));
         }
         else
         {
@@ -437,6 +448,7 @@ public class Page11DragController : MonoBehaviour
         _sparkVoiceLineBusy = true;
         yield return new WaitForSeconds(duration);
         _sparkVoiceLineBusy = false;
+        _voiceLineBusyCoroutine = null;
     }
 
     private AudioClip GetSparkVoiceClip(string sparkName)

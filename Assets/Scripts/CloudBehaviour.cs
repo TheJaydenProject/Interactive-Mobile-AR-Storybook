@@ -10,6 +10,12 @@ public class CloudBehaviour : MonoBehaviour
     [SerializeField] private float _popDuration = 0.3f;
     [SerializeField] private AnimationCurve _popCurve = AnimationCurve.EaseInOut(0f, 1f, 1f, 0f);
 
+    [Header("Idle Float")]
+    [SerializeField] private float _bobHeight = 0.022f;
+    [SerializeField] private float _bobSpeed = 0.8f;
+    [SerializeField] private float _driftAmount = 0.012f;
+    [SerializeField] private float _driftSpeed = 0.5f;
+
     private bool _isPopping = false;
     private Vector3 _fullScale;
 
@@ -68,8 +74,11 @@ public class CloudBehaviour : MonoBehaviour
 
         while (true)
         {
-            float offset = Mathf.Sin(Time.time * 0.8f + seed) * 0.015f;
-            transform.localPosition = startPos + Vector3.up * offset;
+            float yOffset = Mathf.Sin(Time.time * _bobSpeed + seed) * _bobHeight;
+            // Different frequency than the vertical bob so the path traces a lazy figure-eight
+            // instead of a straight diagonal line.
+            float xOffset = Mathf.Cos(Time.time * _driftSpeed + seed) * _driftAmount;
+            transform.localPosition = startPos + new Vector3(xOffset, yOffset, 0f);
             yield return null;
         }
     }

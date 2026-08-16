@@ -24,6 +24,8 @@ public class Page1Manager : MonoBehaviour
     [SerializeField] private float _islandXOffset = 0.0f;
     [SerializeField] private float _islandYOffset = 0.1f;
     [SerializeField] private float _islandZOffset = 0.0f;
+    [Tooltip("Wait after the image is first detected, before capturing its pose to spawn the island — lets ARFoundation's pose estimate settle past its initial (often noisy) read.")]
+    [SerializeField] private float _islandSpawnStabilizationDelay = 0.65f;
     [SerializeField] private float _islandSpawnDelay = 5.0f;
     [SerializeField] private float _islandScale = 1.0f;
     [SerializeField] private Vector3 _islandRotation = Vector3.zero;
@@ -358,6 +360,9 @@ public class Page1Manager : MonoBehaviour
 
     private IEnumerator SpawnIslandThenFadeInThenSpawn(Transform anchor)
     {
+        yield return new WaitForSeconds(_islandSpawnStabilizationDelay);
+        if (anchor == null) yield break; // tracked image removed while stabilizing
+
         SpawnIsland(anchor);
         yield return new WaitForSeconds(_islandSpawnDelay);
         yield return FadeInThenSpawn(anchor);
@@ -376,7 +381,15 @@ public class Page1Manager : MonoBehaviour
         _lastAnchor = anchor;
 
         Vector3 position = anchor.position + new Vector3(_islandXOffset, _islandYOffset, _islandZOffset);
-        _islandInstance = Instantiate(_islandPrefab, position, Quaternion.Euler(_islandRotation), anchor);
+        // Spawned unparented, not attached to the tracked image's own transform — a live-tracked
+        // ARTrackedImage keeps refining its pose every frame, which used to make the island
+        // tilt/wobble along with the physical page instead of staying put once placed. Rotation
+        // is still composed with anchor.rotation (not a bare absolute value) so it matches however
+        // the physical page is actually oriented — a pure Quaternion.Euler(_islandRotation) looked
+        // right in Editor/XR Simulation (whose marker sits at one fixed, canonical orientation) but
+        // pointed the wrong way on-device, since the AR session's world axes are arbitrary, set by
+        // wherever the phone happened to be facing when that session started, not by the page.
+        _islandInstance = Instantiate(_islandPrefab, position, anchor.rotation * Quaternion.Euler(_islandRotation));
         _islandInstance.transform.localScale *= _islandScale;
     }
 
@@ -480,9 +493,15 @@ public class Page1Manager : MonoBehaviour
 
     private void SpawnCloud(Transform anchor, Vector3 horizontalOffset)
     {
-        Vector3 offset = horizontalOffset + Vector3.up * Random.Range(_cloudYOffsetMin, _cloudYOffsetMax);
+        // Stacked on top of the island's own height offset (not just the cloud's own min/max
+        // range) so clouds always sit above the island instead of floating at roughly the same
+        // height as it.
+        Vector3 offset = horizontalOffset + Vector3.up * (_islandYOffset + Random.Range(_cloudYOffsetMin, _cloudYOffsetMax));
 
-        GameObject cloud = Instantiate(_cloudPrefab, anchor.position + offset, Quaternion.identity, anchor);
+        // Spawned unparented, same reasoning as the island (see SpawnIsland) — a live-tracked
+        // ARTrackedImage keeps refining its pose every frame, which used to make clouds
+        // tilt/wobble along with the physical page instead of staying put once placed.
+        GameObject cloud = Instantiate(_cloudPrefab, anchor.position + offset, Quaternion.identity);
         cloud.transform.LookAt(Camera.main.transform);
         cloud.transform.Rotate(0f, 180f, 0f);
         cloud.transform.localScale *= _cloudScale;

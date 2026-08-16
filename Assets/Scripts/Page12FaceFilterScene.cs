@@ -17,6 +17,10 @@ public class Page12FaceFilterScene : MonoBehaviour
     [Tooltip("Name of the main scene to restart into. Must be added to File > Build Settings > Scenes In Build.")]
     [SerializeField] private string _mainSceneName = "Ar1";
 
+    [Header("Music")]
+    [Tooltip("Looping BGM for the crown/mirror scene. No narration ever plays here, so it's safe to run the whole time — starts automatically and needs no explicit stop, since the only way out of this scene is a full process restart back to Ar1 (see class summary).")]
+    [SerializeField] private AudioSource _bgmSource;
+
     [Header("Selfie Capture")]
     [SerializeField] private string _albumName = "EiraAR";
     [SerializeField] private string _fileNamePrefix = "eira_selfie";
@@ -32,6 +36,11 @@ public class Page12FaceFilterScene : MonoBehaviour
     // Guards against a rapid double-tap on Back calling AppRestarter.RestartIntoScene() twice
     // while the process kill is in flight.
     private bool _triggered;
+
+    private void Start()
+    {
+        if (_bgmSource != null) _bgmSource.Play();
+    }
 
     // Wire this to a Back/Done button's OnClick().
     public void ReturnToMainScene()

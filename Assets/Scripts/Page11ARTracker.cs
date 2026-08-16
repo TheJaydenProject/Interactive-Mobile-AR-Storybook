@@ -22,6 +22,8 @@ public class Page11ARTracker : MonoBehaviour
     [SerializeField] private float _islandXOffset = 0.0f;
     [SerializeField] private float _islandYOffset = 0.1f;
     [SerializeField] private float _islandZOffset = 0.0f;
+    [Tooltip("Wait after the image is first detected, before capturing its pose to spawn the island — lets ARFoundation's pose estimate settle past its initial (often noisy) read.")]
+    [SerializeField] private float _islandSpawnStabilizationDelay = 0.65f;
     [SerializeField] private float _islandScale = 1.0f;
     [SerializeField] private Vector3 _islandRotation = Vector3.zero;
     [Tooltip("Wait after the island's shrink is triggered before it actually starts shrinking.")]
@@ -202,12 +204,19 @@ public class Page11ARTracker : MonoBehaviour
     // later, after the first voice line.
     private void BeginPreGameSequence(Transform anchor)
     {
-        SpawnIsland(anchor);
-        _introCoroutine = StartCoroutine(WaitThenStartPhoenixRise());
+        _introCoroutine = StartCoroutine(SpawnIslandThenStartPhoenixRise(anchor));
     }
 
-    private IEnumerator WaitThenStartPhoenixRise()
+    private IEnumerator SpawnIslandThenStartPhoenixRise(Transform anchor)
     {
+        // Wait before spawning so ARFoundation's pose estimate for the image has a moment to
+        // settle past its initial (often noisy) read — the island is unparented and locks in
+        // whatever pose it sees at spawn time, so a bad first read would otherwise be permanent.
+        yield return new WaitForSeconds(_islandSpawnStabilizationDelay);
+        if (anchor == null) yield break; // tracked image removed while stabilizing
+
+        SpawnIsland(anchor);
+
         yield return new WaitForSeconds(_islandSpawnDelay);
         _introCoroutine = null;
         StartPhoenixRise();
@@ -377,7 +386,15 @@ public class Page11ARTracker : MonoBehaviour
         }
 
         Vector3 position = anchor.position + new Vector3(_islandXOffset, _islandYOffset, _islandZOffset);
-        _islandInstance = Instantiate(_islandPrefab, position, Quaternion.Euler(_islandRotation), anchor);
+        // Spawned unparented, not attached to the tracked image's own transform — a live-tracked
+        // ARTrackedImage keeps refining its pose every frame, which used to make the island
+        // tilt/wobble along with the physical page instead of staying put once placed. Rotation
+        // is still composed with anchor.rotation (not a bare absolute value) so it matches however
+        // the physical page is actually oriented — a pure Quaternion.Euler(_islandRotation) looked
+        // right in Editor/XR Simulation (whose marker sits at one fixed, canonical orientation) but
+        // pointed the wrong way on-device, since the AR session's world axes are arbitrary, set by
+        // wherever the phone happened to be facing when that session started, not by the page.
+        _islandInstance = Instantiate(_islandPrefab, position, anchor.rotation * Quaternion.Euler(_islandRotation));
         _islandInstance.transform.localScale *= _islandScale;
 
         _islandReference = _islandInstance.GetComponent<Page11IslandReference>();
@@ -537,6 +554,11 @@ public class Page11ARTracker : MonoBehaviour
         if (!_isActive) return;
 
         CancelPreGameSequence();
+        // Stop the orbit before CancelIslandReward() destroys the island/sparks it's animating —
+        // it does self-heal via Unity's destroyed-object null checks either way, but stopping it
+        // explicitly here matches how every other coroutine-vs-Destroy() ordering in this file
+        // is already handled deliberately rather than relying on incidental timing.
+        StopSparkOrbit();
         CancelIslandReward();
 
         if (_dragController == null) Debug.LogError("[Page11ARTracker] _dragController is NULL");

@@ -45,6 +45,8 @@ public class Page11CompletionSequence : MonoBehaviour
 
     private bool _triggered;
     private bool _transformed;
+    private Coroutine _completionCoroutine;
+    private Coroutine _voiceLineDelayCoroutine;
 
     // The Phoenix renderer lives inside the spawned island prefab (via Page11IslandReference),
     // not as a fixed scene reference, since it doesn't exist until the island is instantiated.
@@ -57,6 +59,46 @@ public class Page11CompletionSequence : MonoBehaviour
 
     private void Awake()
     {
+        if (_completionOverlay != null)
+        {
+            SetOverlayAlpha(0f);
+            _completionOverlay.enabled = false;
+        }
+    }
+
+    private void OnEnable()
+    {
+        if (_appStateManager != null)
+            _appStateManager.OnFeatureCancelled += HandleFeatureCancelled;
+    }
+
+    private void OnDisable()
+    {
+        if (_appStateManager != null)
+            _appStateManager.OnFeatureCancelled -= HandleFeatureCancelled;
+    }
+
+    // Back/Back To Menu pressed mid-reward-sequence. Page11ARTracker's own cancel handler already
+    // destroys the island and releases the shared lock — this only needs to stop both coroutines
+    // before the main one reaches its own (now redundant, and potentially stale) EndFeature() call
+    // below, and reset _triggered so a retried attempt at this page can fire the sequence again.
+    // _transformed/_phoenixRenderer are left alone: Update()'s own `_phoenixRenderer != null` check
+    // already self-heals once the island (and its Renderer) is destroyed by the tracker's cleanup.
+    private void HandleFeatureCancelled()
+    {
+        if (_completionCoroutine == null) return; // not currently running; nothing to cancel
+
+        StopCoroutine(_completionCoroutine);
+        _completionCoroutine = null;
+
+        if (_voiceLineDelayCoroutine != null)
+        {
+            StopCoroutine(_voiceLineDelayCoroutine);
+            _voiceLineDelayCoroutine = null;
+        }
+
+        _triggered = false;
+
         if (_completionOverlay != null)
         {
             SetOverlayAlpha(0f);
@@ -98,7 +140,7 @@ public class Page11CompletionSequence : MonoBehaviour
     {
         if (_triggered) return;
         _triggered = true;
-        StartCoroutine(CompletionRoutine());
+        _completionCoroutine = StartCoroutine(CompletionRoutine());
     }
 
     private IEnumerator CompletionRoutine()
@@ -113,7 +155,7 @@ public class Page11CompletionSequence : MonoBehaviour
 
         // Runs on its own timer, in parallel with the wait below, so it fires 1.5s after the
         // rainbow starts regardless of how long Delay Before Sequence is set to.
-        StartCoroutine(PlayVoiceLineAfterDelay());
+        _voiceLineDelayCoroutine = StartCoroutine(PlayVoiceLineAfterDelay());
 
         if (_delayBeforeSequence > 0f)
             yield return new WaitForSeconds(_delayBeforeSequence);
@@ -172,6 +214,7 @@ public class Page11CompletionSequence : MonoBehaviour
     {
         yield return new WaitForSeconds(_voiceLineDelay);
         PlayVoiceLine();
+        _voiceLineDelayCoroutine = null;
     }
 
     private void PlayVoiceLine()

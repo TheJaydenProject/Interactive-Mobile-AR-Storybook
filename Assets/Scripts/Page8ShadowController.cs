@@ -19,6 +19,8 @@ public class Page8ShadowController : MonoBehaviour
     [SerializeField] private float _islandXOffset = 0.0f;
     [SerializeField] private float _islandYOffset = 0.1f;
     [SerializeField] private float _islandZOffset = 0.0f;
+    [Tooltip("Wait after the image is first detected, before capturing its pose to spawn the island — lets ARFoundation's pose estimate settle past its initial (often noisy) read.")]
+    [SerializeField] private float _islandSpawnStabilizationDelay = 0.65f;
     [Tooltip("Wait after the shadow first appears (unclickable) before the instruction prompt shows.")]
     [SerializeField] private float _shadowToPromptDelay = 0.5f;
     [SerializeField] private float _islandScale = 1.0f;
@@ -61,6 +63,7 @@ public class Page8ShadowController : MonoBehaviour
     private Coroutine _islandIntroCoroutine;
     private Coroutine _postPromptCoroutine;
     private Coroutine _islandFadeOutCoroutine;
+    private Coroutine _completionTransitionCoroutine;
 
     // Mirrors "do I currently hold the shared AppStateManager lock" for the cancel guard, and
     // also gates Update() so its per-frame hold/morph work doesn't run before the shadow is
@@ -203,13 +206,20 @@ public class Page8ShadowController : MonoBehaviour
     // responding to touch.
     private void BeginPreShadowSequence(Transform anchor)
     {
-        SpawnIsland(anchor);
-        ShowShadow();
-        _islandIntroCoroutine = StartCoroutine(WaitThenShowInstructions());
+        _islandIntroCoroutine = StartCoroutine(SpawnIslandThenShowInstructions(anchor));
     }
 
-    private IEnumerator WaitThenShowInstructions()
+    private IEnumerator SpawnIslandThenShowInstructions(Transform anchor)
     {
+        // Wait before spawning so ARFoundation's pose estimate for the image has a moment to
+        // settle past its initial (often noisy) read — the island is unparented and locks in
+        // whatever pose it sees at spawn time, so a bad first read would otherwise be permanent.
+        yield return new WaitForSeconds(_islandSpawnStabilizationDelay);
+        if (anchor == null) yield break; // tracked image removed while stabilizing
+
+        SpawnIsland(anchor);
+        ShowShadow();
+
         yield return new WaitForSeconds(_shadowToPromptDelay);
         _islandIntroCoroutine = null;
         ShowInstructionPrompt();
@@ -266,7 +276,15 @@ public class Page8ShadowController : MonoBehaviour
         }
 
         Vector3 position = anchor.position + new Vector3(_islandXOffset, _islandYOffset, _islandZOffset);
-        _islandInstance = Instantiate(_islandPrefab, position, Quaternion.Euler(_islandRotation), anchor);
+        // Spawned unparented, not attached to the tracked image's own transform — a live-tracked
+        // ARTrackedImage keeps refining its pose every frame, which used to make the island
+        // tilt/wobble along with the physical page instead of staying put once placed. Rotation
+        // is still composed with anchor.rotation (not a bare absolute value) so it matches however
+        // the physical page is actually oriented — a pure Quaternion.Euler(_islandRotation) looked
+        // right in Editor/XR Simulation (whose marker sits at one fixed, canonical orientation) but
+        // pointed the wrong way on-device, since the AR session's world axes are arbitrary, set by
+        // wherever the phone happened to be facing when that session started, not by the page.
+        _islandInstance = Instantiate(_islandPrefab, position, anchor.rotation * Quaternion.Euler(_islandRotation));
         _islandInstance.transform.localScale *= _islandScale;
 
         _islandVfxReference = _islandInstance.GetComponent<IslandVfxReference>();
@@ -406,11 +424,20 @@ public class Page8ShadowController : MonoBehaviour
             StopCoroutine(_islandFadeOutCoroutine);
             _islandFadeOutCoroutine = null;
         }
+        if (_completionTransitionCoroutine != null)
+        {
+            // Without this, a hold that completed right as Back was pressed could still fire
+            // _completionSequence.TriggerCompletion() moments later, on a page the child already
+            // backed out of.
+            StopCoroutine(_completionTransitionCoroutine);
+            _completionTransitionCoroutine = null;
+        }
         if (_instructionPrompt != null) _instructionPrompt.SetActive(false);
 
         _isHolding = false;
         _shadowInteractable = false;
         _holdProgress = 0f; // no partial credit — reset so a future attempt starts from scratch
+        _isCompleted = false; // re-arms Update()'s hold logic for a future attempt at this page
 
         if (_shadowImage != null)
         {
@@ -484,7 +511,7 @@ public class Page8ShadowController : MonoBehaviour
             else
                 Debug.LogWarning("[Page8ShadowController] _pendantManager is missing.");
 
-            StartCoroutine(FadeOutShadowThenComplete());
+            _completionTransitionCoroutine = StartCoroutine(FadeOutShadowThenComplete());
         }
     }
 
@@ -508,6 +535,8 @@ public class Page8ShadowController : MonoBehaviour
             _completionSequence.TriggerCompletion();
         else
             Debug.LogWarning("[Page8ShadowController] _completionSequence is missing.");
+
+        _completionTransitionCoroutine = null;
     }
 
     private IEnumerator FadeOutShadow()

@@ -24,6 +24,10 @@ public class AppStateManager : MonoBehaviour
     /// </summary>
     public event Action OnFeatureCancelled;
 
+    [Header("Audio")]
+    [Tooltip("Skipped when Cancel stops all currently-playing audio — e.g. the background music source and the button-click SFX source, neither of which belong to whichever page feature just got cancelled.")]
+    [SerializeField] private AudioSource[] _audioSourcesExcludedFromCancelStop;
+
     private bool _isFeatureActive;
 
     public bool IsFeatureActive => _isFeatureActive;
@@ -58,6 +62,32 @@ public class AppStateManager : MonoBehaviour
     public void CancelFeature()
     {
         if (!_isFeatureActive) return;
+        StopAllFeatureAudio();
         OnFeatureCancelled?.Invoke();
+    }
+
+    // Cuts off whatever's currently playing (voice lines, SFX) the instant Back/Back To Menu is
+    // pressed, so nothing keeps talking/playing over the menu or the next page — instead of
+    // relying on every single page script to remember to stop its own AudioSources on cancel.
+    // AudioSource.Stop() only halts playback; the clip and every other setting are untouched, so
+    // the exact same sound plays completely normally the next time this (or any) page triggers it.
+    private void StopAllFeatureAudio()
+    {
+        AudioSource[] allSources = FindObjectsByType<AudioSource>(FindObjectsInactive.Include);
+        foreach (AudioSource source in allSources)
+        {
+            if (IsExcludedFromCancelStop(source)) continue;
+            source.Stop();
+        }
+    }
+
+    private bool IsExcludedFromCancelStop(AudioSource source)
+    {
+        if (_audioSourcesExcludedFromCancelStop == null) return false;
+
+        foreach (AudioSource excluded in _audioSourcesExcludedFromCancelStop)
+            if (excluded == source) return true;
+
+        return false;
     }
 }

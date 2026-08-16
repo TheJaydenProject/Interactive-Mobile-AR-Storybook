@@ -8,6 +8,10 @@ public class MenuManager : MonoBehaviour
     [Header("Menu UI")]
     [SerializeField] private GameObject _menuUIGroup;
 
+    [Header("Instructions")]
+    [Tooltip("Shown after Start is pressed, before the camera/mic permission prompts. Needs its own Continue button wired to OnInstructionsContinuePressed().")]
+    [SerializeField] private GameObject _instructionUIGroup;
+
     [Header("Permission Fallback")]
     [SerializeField] private GameObject _permissionDeniedGroup;
     [SerializeField] private TMP_Text   _permissionDeniedMessage;
@@ -15,6 +19,17 @@ public class MenuManager : MonoBehaviour
     [Header("AR Scanning")]
     [Tooltip("Disabled at Awake so pages can't be scanned behind the menu; re-enabled once Start is pressed and permissions are granted.")]
     [SerializeField] private ARSession _arSession;
+
+    [Header("Back To Menu")]
+    [Tooltip("Icon/button shown the whole time the camera/scanner is active — unlike BackButtonController's cancel button, this isn't gated behind a page feature being active. Needs OnClick() wired to OnBackToMenuPressed().")]
+    [SerializeField] private GameObject _backToMenuButton;
+
+    [Tooltip("Used to stop whichever page feature (if any) is mid-interaction when Back To Menu is pressed, same as BackButtonController's cancel button. Also used to pause/resume Idle Bgm Source around page features once the camera is open.")]
+    [SerializeField] private AppStateManager _appStateManager;
+
+    [Header("Music")]
+    [Tooltip("Single looping BGM track that plays continuously for the whole app session (menu, instructions, and idle scanning all share it). Muted whenever a page feature is active (minigame/narration running), unmuted the rest of the time — never stopped/restarted.")]
+    [SerializeField] private AudioSource _bgmSource;
 
     private bool _isRequestingPermissions;
 
@@ -25,18 +40,61 @@ public class MenuManager : MonoBehaviour
 
         if (_arSession != null) _arSession.enabled = false;
         else Debug.LogError("[MenuManager] _arSession not assigned; AR scanning will not be gated behind Start.");
+
+        if (_backToMenuButton != null) _backToMenuButton.SetActive(false);
+
+        if (_bgmSource != null) _bgmSource.Play();
+    }
+
+    private void OnEnable()
+    {
+        if (_appStateManager != null)
+            _appStateManager.OnFeatureActiveChanged += HandleFeatureActiveChangedForBgm;
+    }
+
+    private void OnDisable()
+    {
+        if (_appStateManager != null)
+            _appStateManager.OnFeatureActiveChanged -= HandleFeatureActiveChangedForBgm;
+    }
+
+    // Mute instead of Stop/Play — the track just keeps looping in the background the whole time,
+    // so there's never a restart pop/gap when a page feature ends.
+    private void HandleFeatureActiveChangedForBgm(bool isFeatureActive)
+    {
+        if (_bgmSource != null) _bgmSource.mute = isFeatureActive;
     }
 
     public void OnStartPressed()
     {
-        if (_isRequestingPermissions) return;
-
         if (_menuUIGroup == null)
         {
             Debug.LogError("[MenuManager] _menuUIGroup not assigned; cannot proceed.");
             return;
         }
 
+        if (_instructionUIGroup == null)
+        {
+            Debug.LogError("[MenuManager] _instructionUIGroup not assigned; cannot proceed.");
+            return;
+        }
+
+        _menuUIGroup.SetActive(false);
+        _instructionUIGroup.SetActive(true);
+    }
+
+    // Wire this to the instruction screen's own Continue/Got It button.
+    public void OnInstructionsContinuePressed()
+    {
+        if (_isRequestingPermissions) return;
+
+        if (_instructionUIGroup == null)
+        {
+            Debug.LogError("[MenuManager] _instructionUIGroup not assigned; cannot proceed.");
+            return;
+        }
+
+        _instructionUIGroup.SetActive(false);
         StartCoroutine(RequestPermissionsAndProceed());
     }
 
@@ -77,6 +135,26 @@ public class MenuManager : MonoBehaviour
 
         if (_arSession != null) _arSession.enabled = true;
         else Debug.LogError("[MenuManager] _arSession not assigned; cannot enable AR scanning.");
+
+        if (_backToMenuButton != null) _backToMenuButton.SetActive(true);
+    }
+
+    // Wire this to the back-to-menu icon/button shown while the camera/scanner is active.
+    public void OnBackToMenuPressed()
+    {
+        // Stop whichever page feature is mid-interaction (island, minigame, coroutines, etc.)
+        // before leaving — same cancel path BackButtonController uses. CancelFeature() is a
+        // no-op if nothing's active, so this is safe to call unconditionally.
+        if (_appStateManager != null) _appStateManager.CancelFeature();
+        else Debug.LogWarning("[MenuManager] _appStateManager not assigned; an in-progress page feature (if any) won't be stopped.");
+
+        if (_arSession != null) _arSession.enabled = false;
+        else Debug.LogError("[MenuManager] _arSession not assigned; cannot disable AR scanning.");
+
+        if (_menuUIGroup != null) _menuUIGroup.SetActive(true);
+        else Debug.LogError("[MenuManager] _menuUIGroup not assigned; cannot show menu.");
+
+        if (_backToMenuButton != null) _backToMenuButton.SetActive(false);
     }
 
     private void ShowPermissionDenied(bool cameraGranted, bool micGranted)
