@@ -79,20 +79,28 @@ public class MenuManager : MonoBehaviour
     private void OnEnable()
     {
         if (_appStateManager != null)
-            _appStateManager.OnFeatureActiveChanged += HandleFeatureActiveChangedForBgm;
+            _appStateManager.OnFeatureActiveChanged += HandleFeatureActiveChanged;
     }
 
     private void OnDisable()
     {
         if (_appStateManager != null)
-            _appStateManager.OnFeatureActiveChanged -= HandleFeatureActiveChangedForBgm;
+            _appStateManager.OnFeatureActiveChanged -= HandleFeatureActiveChanged;
     }
 
-    // Mute instead of Stop/Play — the track just keeps looping in the background the whole time,
-    // so there's never a restart pop/gap when a page feature ends.
-    private void HandleFeatureActiveChangedForBgm(bool isFeatureActive)
+    // Fires only while the camera is actually open — no page's feature can ever go active before
+    // ProceedToScanner() enables the ARSession, so this never needs to check for that separately.
+    private void HandleFeatureActiveChanged(bool isFeatureActive)
     {
+        // Mute instead of Stop/Play — the track just keeps looping in the background the whole
+        // time, so there's never a restart pop/gap when a page feature ends.
         if (_bgmSource != null) _bgmSource.mute = isFeatureActive;
+
+        // Hidden the instant any page's feature goes active — only the per-page Cancel button
+        // should be available during an interactive minigame/narration, not both at once. Shown
+        // again the moment it ends (or is cancelled) and scanning goes back to idle.
+        if (_backToMenuButton != null)
+            _backToMenuButton.SetActive(!isFeatureActive);
     }
 
     public void OnStartPressed()
