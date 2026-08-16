@@ -332,11 +332,13 @@ public class Page12ARTracker : MonoBehaviour
         _postAudioCoroutine = StartCoroutine(WaitForAudioThenShowOverlay());
     }
 
-    // Runtime tap-anywhere-to-dismiss, same trick every other page's instruction prompt uses — a
-    // tap on the speaker button itself is consumed by that Button first and never reaches this.
-    // Manual skip path on top of the normal audio → overlay → button progression: jumps straight
-    // to the Try It On button instead of waiting through the voice line and overlay.
-    private void OnInstructionPromptTapped()
+    // Public so it can be wired directly to a dedicated dismiss/skip Button's OnClick() in the
+    // Inspector, on top of the runtime tap-anywhere handler below (same trick every other page's
+    // instruction prompt uses — a tap on the speaker button itself is consumed by that Button
+    // first and never reaches either path). Manual skip on top of the normal audio → overlay →
+    // button progression: jumps straight to the Try It On button instead of waiting through the
+    // voice line and overlay.
+    public void OnInstructionPromptTapped()
     {
         if (_instructionPrompt == null || !_instructionPrompt.activeSelf) return;
 

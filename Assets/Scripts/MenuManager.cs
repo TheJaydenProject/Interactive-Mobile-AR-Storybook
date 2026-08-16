@@ -8,8 +8,22 @@ public class MenuManager : MonoBehaviour
     [Header("Menu UI")]
     [SerializeField] private GameObject _menuUIGroup;
 
+    [Header("Name Entry")]
+    [Tooltip("Shown after Start is pressed, before the Welcome screen. Needs a name input field and a Continue button wired to OnNameSubmitted().")]
+    [SerializeField] private GameObject _nameEntryGroup;
+    [SerializeField] private TMP_InputField _nameInputField;
+
+    [Header("Welcome")]
+    [Tooltip("Shown after a name is submitted, before the instructions screen. Appears instantly (no fade) — needs a Continue button wired to OnWelcomeContinuePressed().")]
+    [SerializeField] private GameObject _welcomeGroup;
+    [SerializeField] private TMP_Text    _welcomeMessage;
+    [Tooltip("A sub-element within the Welcome group (e.g. its message/decoration) that fades in once the Welcome group is already showing. No CanvasGroup needed on it, one is added automatically at runtime.")]
+    [SerializeField] private GameObject _welcomeFadeInGroup;
+    [Tooltip("Kept slow/gentle on purpose — this is a subtle fade, not an attention-grabbing one.")]
+    [SerializeField] private float       _welcomeFadeInDuration = 1.2f;
+
     [Header("Instructions")]
-    [Tooltip("Shown after Start is pressed, before the camera/mic permission prompts. Needs its own Continue button wired to OnInstructionsContinuePressed().")]
+    [Tooltip("Shown after the Welcome screen, before the camera/mic permission prompts. Needs its own Continue button wired to OnInstructionsContinuePressed().")]
     [SerializeField] private GameObject _instructionUIGroup;
 
     [Header("Permission Fallback")]
@@ -32,6 +46,8 @@ public class MenuManager : MonoBehaviour
     [SerializeField] private AudioSource _bgmSource;
 
     private bool _isRequestingPermissions;
+    private CanvasGroup _welcomeCanvasGroup;
+    private Coroutine _welcomeFadeCoroutine;
 
     private void Awake()
     {
@@ -42,6 +58,17 @@ public class MenuManager : MonoBehaviour
         else Debug.LogError("[MenuManager] _arSession not assigned; AR scanning will not be gated behind Start.");
 
         if (_backToMenuButton != null) _backToMenuButton.SetActive(false);
+        if (_nameEntryGroup != null) _nameEntryGroup.SetActive(false);
+        if (_welcomeGroup != null) _welcomeGroup.SetActive(false);
+
+        if (_welcomeFadeInGroup != null)
+        {
+            _welcomeCanvasGroup = _welcomeFadeInGroup.GetComponent<CanvasGroup>();
+            if (_welcomeCanvasGroup == null)
+                _welcomeCanvasGroup = _welcomeFadeInGroup.AddComponent<CanvasGroup>();
+
+            _welcomeCanvasGroup.alpha = 0f;
+        }
 
         if (_bgmSource != null) _bgmSource.Play();
     }
@@ -73,13 +100,91 @@ public class MenuManager : MonoBehaviour
             return;
         }
 
+        if (_nameEntryGroup == null)
+        {
+            Debug.LogError("[MenuManager] _nameEntryGroup not assigned; cannot proceed.");
+            return;
+        }
+
+        _menuUIGroup.SetActive(false);
+        _nameEntryGroup.SetActive(true);
+    }
+
+    // Wire this to the name entry screen's own Continue button.
+    public void OnNameSubmitted()
+    {
+        if (_nameEntryGroup == null)
+        {
+            Debug.LogError("[MenuManager] _nameEntryGroup not assigned; cannot proceed.");
+            return;
+        }
+
+        if (_welcomeGroup == null)
+        {
+            Debug.LogError("[MenuManager] _welcomeGroup not assigned; cannot proceed.");
+            return;
+        }
+
+        string enteredName = _nameInputField != null ? _nameInputField.text.Trim() : string.Empty;
+        if (string.IsNullOrEmpty(enteredName)) enteredName = "friend"; // left blank — still let them through
+
+        if (_welcomeMessage != null)
+            _welcomeMessage.text = $"Welcome, {enteredName}! Your journey starts now.";
+
+        _nameEntryGroup.SetActive(false);
+        _welcomeGroup.SetActive(true); // instant — no fade on the panel itself
+
+        if (_welcomeFadeCoroutine != null) StopCoroutine(_welcomeFadeCoroutine);
+        _welcomeFadeCoroutine = StartCoroutine(FadeInWelcome());
+    }
+
+    // Fades in only _welcomeFadeInGroup (a sub-element), once the Welcome panel itself is already
+    // showing — the panel switch (SetActive above) is instant, this is just a subtle accent on top.
+    private IEnumerator FadeInWelcome()
+    {
+        if (_welcomeCanvasGroup == null)
+        {
+            _welcomeFadeCoroutine = null;
+            yield break;
+        }
+
+        _welcomeCanvasGroup.alpha = 0f;
+
+        float elapsed = 0f;
+        while (elapsed < _welcomeFadeInDuration)
+        {
+            elapsed += Time.deltaTime;
+            _welcomeCanvasGroup.alpha = Mathf.Clamp01(elapsed / _welcomeFadeInDuration);
+            yield return null;
+        }
+
+        _welcomeCanvasGroup.alpha = 1f;
+        _welcomeFadeCoroutine = null;
+    }
+
+    // Wire this to the Welcome screen's own Continue button.
+    public void OnWelcomeContinuePressed()
+    {
+        if (_welcomeGroup == null)
+        {
+            Debug.LogError("[MenuManager] _welcomeGroup not assigned; cannot proceed.");
+            return;
+        }
+
         if (_instructionUIGroup == null)
         {
             Debug.LogError("[MenuManager] _instructionUIGroup not assigned; cannot proceed.");
             return;
         }
 
-        _menuUIGroup.SetActive(false);
+        // In case Continue is tapped before the fade-in finishes.
+        if (_welcomeFadeCoroutine != null)
+        {
+            StopCoroutine(_welcomeFadeCoroutine);
+            _welcomeFadeCoroutine = null;
+        }
+
+        _welcomeGroup.SetActive(false);
         _instructionUIGroup.SetActive(true);
     }
 
