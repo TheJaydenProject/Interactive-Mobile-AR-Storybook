@@ -27,6 +27,7 @@ Key design decisions:
 
 - Unity Hub with Editor version **6000.4.5f1** installed, including the Android Build Support module (SDK, NDK, and OpenJDK components)
 - An Android device running **Android 11 (API 30) or later** with ARCore support, connected over USB with developer mode and USB debugging enabled
+- For the page 12 AR crown feature specifically, the device must support ARCore's front-facing camera (face tracking), not just rear-camera ARCore. Check the device against Google's [ARCore supported devices list](https://developers.google.com/ar/devices) before relying on that page, front-camera support is a smaller subset of the devices that support ARCore at all, so a device can pass everything else in this list and still not run page 12
 - The physical storybook, or printed copies of the page images in `Assets/Images` (`page1.png`, `page4.png`, `page6.png`, `page8.png`, `page10.png`, `page11.png`, `page12.png`), since the app has nothing to scan without them
 
 Verify the Android device is detected:
@@ -75,6 +76,8 @@ adb devices
 | Page 12 | AR Crown | Use a face filter to see yourself wearing a crown and take a selfie |
 
 Photos taken on page 12 can be viewed afterward from the **Gallery** button on the main menu.
+
+Page 12 only works on devices whose front-facing camera supports ARCore face tracking, see the [Prerequisites](#prerequisites) note above. On an unsupported device, every other page still works normally.
 
 ## Project Structure
 
