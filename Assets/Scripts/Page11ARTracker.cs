@@ -559,10 +559,17 @@ public class Page11ARTracker : MonoBehaviour
         // explicitly here matches how every other coroutine-vs-Destroy() ordering in this file
         // is already handled deliberately rather than relying on incidental timing.
         StopSparkOrbit();
-        CancelIslandReward();
 
+        // Must run before CancelIslandReward(): that call destroys the island and (via
+        // DespawnIsland -> Initialize(null, null)) nulls out _dragController's _sparks array. If a
+        // spark is actively held (_heldIndex != -1 — the normal state while a finger is still down
+        // on one), CancelDrag() -> ReturnSpark() indexes _sparks, which would throw a
+        // NullReferenceException here and abort the rest of this handler, leaving the shared lock
+        // permanently claimed since EndFeature() below would never run.
         if (_dragController == null) Debug.LogError("[Page11ARTracker] _dragController is NULL");
         else _dragController.CancelDrag();
+
+        CancelIslandReward();
 
         HideUI();
         _suppressedWhileTracked = true;

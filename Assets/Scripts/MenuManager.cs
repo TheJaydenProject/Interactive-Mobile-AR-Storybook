@@ -8,6 +8,9 @@ public class MenuManager : MonoBehaviour
     [Header("Menu UI")]
     [SerializeField] private GameObject _menuUIGroup;
 
+    [Tooltip("Reset to a clean slate the instant Start is pressed, so a new session never inherits sparks collected in a previous playthrough.")]
+    [SerializeField] private PendantManager _pendantManager;
+
     [Header("Name Entry")]
     [Tooltip("Shown after Start is pressed, before the Welcome screen. Needs a name input field and a Continue button wired to OnNameSubmitted().")]
     [SerializeField] private GameObject _nameEntryGroup;
@@ -105,6 +108,9 @@ public class MenuManager : MonoBehaviour
             Debug.LogError("[MenuManager] _nameEntryGroup not assigned; cannot proceed.");
             return;
         }
+
+        if (_pendantManager != null) _pendantManager.ResetSparks();
+        else Debug.LogWarning("[MenuManager] _pendantManager not assigned; sparks won't reset for this session.");
 
         _menuUIGroup.SetActive(false);
         _nameEntryGroup.SetActive(true);

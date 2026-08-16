@@ -73,6 +73,25 @@ public class PendantManager : MonoBehaviour
         Debug.Log("[PendantManager] Gold Spark collected.");
     }
 
+    // Wired to MenuManager.OnStartPressed() so every new session starts with a clean slate —
+    // otherwise a returning player (or a different child on the same device) would find sparks
+    // from a previous playthrough already unlocked, e.g. on Page 11's drag targets.
+    public void ResetSparks()
+    {
+        _blueSparkCollected = false;
+        _redSparkCollected = false;
+        _yellowSparkCollected = false;
+        _goldSparkCollected = false;
+
+        PlayerPrefs.DeleteKey(BlueSparkKey);
+        PlayerPrefs.DeleteKey(RedSparkKey);
+        PlayerPrefs.DeleteKey(YellowSparkKey);
+        PlayerPrefs.DeleteKey(GoldSparkKey);
+        PlayerPrefs.Save();
+
+        Debug.Log("[PendantManager] Sparks reset for a new session.");
+    }
+
     public List<string> GetCollectedSparks()
     {
         List<string> collectedSparks = new List<string>();
