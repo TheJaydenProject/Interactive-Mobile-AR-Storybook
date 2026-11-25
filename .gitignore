@@ -94,3 +94,8 @@ Thumbs.db.meta
 # JetBrains
 /.idea/
 .idea/**
+# Debug output and build artifacts
+stdout.txt
+stderr.txt
+.utmp/
+*_BurstDebugInformation_DoNotShip/
